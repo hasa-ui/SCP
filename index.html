@@ -1,0 +1,83 @@
+<!DOCTYPE html>
+<html lang="ja">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>SCP: 収容差分 / Archive Drift</title>
+    <link rel="stylesheet" href="styles.css" />
+    <script defer src="game-data.js"></script>
+    <script defer src="app.js"></script>
+  </head>
+  <body>
+    <div class="app-shell">
+      <header class="topbar">
+        <div>
+          <p class="eyebrow">Archive Consistency Office</p>
+          <h1>SCP: 収容差分</h1>
+          <p class="subtitle">文書の整合が、そのまま収容の成否になる。</p>
+        </div>
+        <div class="topbar-actions">
+          <button id="new-game-button" class="ghost-button" data-action="new-game">新規周回</button>
+          <button id="reset-save-button" class="ghost-button" data-action="reset-save">セーブ削除</button>
+        </div>
+      </header>
+
+      <main class="layout">
+        <aside class="column sidebar">
+          <section class="panel">
+            <h2>日次状態</h2>
+            <div id="day-summary" class="summary-card"></div>
+            <div id="player-stats" class="stat-group"></div>
+            <div id="site-stats" class="stat-group"></div>
+          </section>
+
+          <section class="panel">
+            <h2>案件進行</h2>
+            <div id="case-list" class="case-list"></div>
+          </section>
+
+          <section class="panel">
+            <h2>文書一覧</h2>
+            <div id="document-list" class="document-list"></div>
+          </section>
+
+          <section class="panel">
+            <h2>処理ログ</h2>
+            <div id="activity-log" class="log-list"></div>
+          </section>
+        </aside>
+
+        <section class="column reader">
+          <section class="panel reader-panel">
+            <div id="reader-header" class="reader-header"></div>
+            <div id="reader-content" class="reader-content"></div>
+          </section>
+        </section>
+
+        <aside class="column inspector">
+          <section class="panel">
+            <h2>案件分析</h2>
+            <div id="case-summary" class="case-summary"></div>
+          </section>
+
+          <section class="panel">
+            <h2>比較</h2>
+            <div id="compare-controls" class="control-stack"></div>
+          </section>
+
+          <section class="panel">
+            <h2>編集</h2>
+            <div id="edit-controls" class="control-stack"></div>
+          </section>
+
+          <section class="panel">
+            <h2>判断</h2>
+            <div id="decision-controls" class="control-stack"></div>
+          </section>
+        </aside>
+      </main>
+    </div>
+
+    <div id="overlay" class="overlay hidden"></div>
+  </body>
+</html>

@@ -16,6 +16,7 @@
   };
 
   let state = null;
+  let storageAvailable = true;
 
   document.addEventListener("DOMContentLoaded", init);
 
@@ -58,7 +59,7 @@
 
     if (action === "reset-save") {
       if (window.confirm("ローカルセーブを削除しますか。")) {
-        localStorage.removeItem(SAVE_KEY);
+        clearSavedState();
         state = createInitialState();
         saveState();
         render();
@@ -199,6 +200,7 @@
         makeLogEntry("配属完了。記録整合管理局の当直が開始された。"),
         makeLogEntry("初期権限は CL-2。案件の整合確認と採用判断を担当する。"),
       ],
+      storageWarning: !storageAvailable,
       overlay: null,
       gameOver: false,
       ending: null,
@@ -217,12 +219,48 @@
       }
       return parsed;
     } catch (error) {
+      storageAvailable = false;
       return null;
     }
   }
 
   function saveState() {
-    localStorage.setItem(SAVE_KEY, JSON.stringify(state));
+    if (!storageAvailable) {
+      if (state) {
+        state.storageWarning = true;
+      }
+      return false;
+    }
+    try {
+      localStorage.setItem(SAVE_KEY, JSON.stringify(state));
+      return true;
+    } catch (error) {
+      markStorageUnavailable();
+      return false;
+    }
+  }
+
+  function clearSavedState() {
+    if (!storageAvailable) {
+      if (state) {
+        state.storageWarning = true;
+      }
+      return false;
+    }
+    try {
+      localStorage.removeItem(SAVE_KEY);
+      return true;
+    } catch (error) {
+      markStorageUnavailable();
+      return false;
+    }
+  }
+
+  function markStorageUnavailable() {
+    storageAvailable = false;
+    if (state) {
+      state.storageWarning = true;
+    }
   }
 
   function syncState() {
@@ -621,6 +659,8 @@
     const truth = state.site.truth;
     const secrecy = state.site.secrecy;
     const containment = state.site.containment;
+    const casualties = state.site.casualties;
+    const stableSite = containment >= 70 && secrecy >= 65 && casualties === 0;
 
     if (
       contamination >= 72 ||
@@ -635,6 +675,15 @@
       };
     }
 
+    if (state.flags.includes("canonicalFalseArchive")) {
+      return {
+        id: "record-dominion",
+        title: "記録支配エンド",
+        description:
+          "収容は書類上で完了し、現実は採用された版へ引き寄せられる。真相は溶けるが、記録だけは完璧に整う。",
+      };
+    }
+
     if (state.flags.includes("contradictoryArchive") || truth >= 72) {
       return {
         id: "truth",
@@ -644,10 +693,7 @@
       };
     }
 
-    if (
-      state.flags.includes("canonicalFalseArchive") ||
-      (contamination >= 55 && secrecy >= 60)
-    ) {
+    if (contamination >= 55 && secrecy >= 60) {
       return {
         id: "record-dominion",
         title: "記録支配エンド",
@@ -656,11 +702,20 @@
       };
     }
 
+    if (stableSite) {
+      return {
+        id: "foundation",
+        title: "模範的財団エンド",
+        description:
+          "収容は安定し、秘匿も維持された。多数の差分と真相は削ぎ落とされたが、財団は機能し続ける。",
+      };
+    }
+
     return {
-      id: "foundation",
-      title: "模範的財団エンド",
+      id: "false-stability",
+      title: "偽安定エンド",
       description:
-        "収容は安定し、秘匿も維持された。多数の差分と真相は削ぎ落とされたが、財団は機能し続ける。",
+        "帳票上は辛うじて保たれているが、収容は安定と呼べる水準に届いていない。消された差分だけが、次の崩れを予告している。",
     };
   }
 
@@ -707,6 +762,11 @@
           ? `<div class="status-block small"><strong>前日報告</strong><br />${escapeHtml(
               report.summary
             )}</div>`
+          : ""
+      }
+      ${
+        state.storageWarning
+          ? `<div class="warning-block small"><strong>セーブ警告</strong><br />この環境ではローカル保存に失敗しました。進行は現在のタブ内でのみ保持されます。</div>`
           : ""
       }
     `;

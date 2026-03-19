@@ -241,8 +241,9 @@
   }
 
   function saveState() {
+    const initialWarningReason = state ? state.storageWarningReason : "";
     const shouldPreserveWarning =
-      preserveInitialStorageWarning && Boolean(state && state.storageWarningReason);
+      preserveInitialStorageWarning && Boolean(initialWarningReason);
 
     if (state && !shouldPreserveWarning) {
       state.storageWarning = false;
@@ -263,7 +264,7 @@
       }
       return true;
     } catch (error) {
-      if (!shouldPreserveWarning) {
+      if (!shouldPreserveWarning || initialWarningReason === "corrupted") {
         setStorageWarning("write-failed");
       }
       return false;

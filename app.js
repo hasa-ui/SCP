@@ -17,14 +17,17 @@
 
   let state = null;
   let storageWarningReason = "";
+  let preserveInitialStorageWarning = false;
 
   document.addEventListener("DOMContentLoaded", init);
 
   function init() {
     state = loadState() || createInitialState();
+    preserveInitialStorageWarning = Boolean(state.storageWarningReason);
     syncState();
     bindEvents();
     render();
+    preserveInitialStorageWarning = false;
   }
 
   function bindEvents() {
@@ -238,16 +241,31 @@
   }
 
   function saveState() {
-    if (state) {
+    const shouldPreserveWarning =
+      preserveInitialStorageWarning && Boolean(state && state.storageWarningReason);
+
+    if (state && !shouldPreserveWarning) {
       state.storageWarning = false;
       state.storageWarningReason = "";
     }
+
     try {
-      localStorage.setItem(SAVE_KEY, JSON.stringify(state));
-      clearStorageWarning();
+      const payload = shouldPreserveWarning
+        ? {
+            ...state,
+            storageWarning: false,
+            storageWarningReason: "",
+          }
+        : state;
+      localStorage.setItem(SAVE_KEY, JSON.stringify(payload));
+      if (!shouldPreserveWarning) {
+        clearStorageWarning();
+      }
       return true;
     } catch (error) {
-      setStorageWarning("write-failed");
+      if (!shouldPreserveWarning) {
+        setStorageWarning("write-failed");
+      }
       return false;
     }
   }

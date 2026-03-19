@@ -19,6 +19,7 @@
 - 2026-03-18: `README.md` を更新し、起動方法とMVP実装範囲を追記。
 - 2026-03-18: レビュー指摘3件に対応するため `app.js` を修正。`localStorage` 例外時のメモリ実行フォールバック、`canonicalFalseArchive` 優先、安定条件を満たさない場合の `偽安定エンド` を追加。
 - 2026-03-19: ストレージ回復回りを再修正。`破損JSON` と `保存不可` を分離し、`reset-save` が一時的な `setItem()` 失敗後でも旧セーブを day 1 の新規状態へ置き換えられるようにした。
+- 2026-03-19: 初期化時のストレージ警告を保持するため、初回 `syncState()` の保存試行では `corrupted / unavailable` 理由を上書きしないよう `app.js` を再修正。
 
 ## Verification Log
 - 2026-03-18: `node --check app.js` -> 成功
@@ -31,6 +32,10 @@
 - 2026-03-19: `node --check app.js` -> 成功
 - 2026-03-19: `node /tmp/linkedom/verify-storage-recovery.mjs` -> `CORRUPTED_SAVE_RECOVERY_OK` / `RESET_AFTER_WRITE_FAILURE_OK`
 - 2026-03-19: `node /tmp/linkedom/verify-review-fixes.mjs` -> `CANONICAL_FALSE_OK` / `STORAGE_FALLBACK_OK` / `UNSTABLE_FALLBACK_OK`
+- 2026-03-19: 再修正後 `node --check app.js` -> 成功
+- 2026-03-19: `node /tmp/linkedom/verify-initial-storage-warning.mjs` -> `INITIAL_STORAGE_WARNING_OK`
+- 2026-03-19: 再修正後 `node /tmp/linkedom/verify-storage-recovery.mjs` -> `CORRUPTED_SAVE_RECOVERY_OK` / `RESET_AFTER_WRITE_FAILURE_OK`
+- 2026-03-19: 再修正後 `node /tmp/linkedom/verify-review-fixes.mjs` -> `CANONICAL_FALSE_OK` / `STORAGE_FALLBACK_OK` / `UNSTABLE_FALLBACK_OK`
 
 ## Review Plan (2026-03-18)
 - [x] 対象コミットと作業ツリーを確認する
@@ -62,3 +67,17 @@
 ## Review Verification Log
 - 2026-03-19: `node` + linkedom（保存値を `{broken json` に破損） -> 初期化後も `localStorage` 自体は利用可能なのに `セーブ警告` 表示、`reset-save` 実行後も保存値が `{broken json` のまま残存
 - 2026-03-19: `node` + linkedom（一度だけ `localStorage.setItem()` を失敗させた後に `reset-save` 実行） -> 既存の day-4 セーブが削除されず、再読込で旧進行が復活
+
+## Review Plan (2026-03-19, commit 00090b6)
+- [x] 対象コミット `00090b6a58c9226f6e4a27c6a83a1c99f13bc663` の差分を確認する
+- [x] 保存警告の分岐が実際の初期化経路で表示されるか検証する
+- [x] 指摘要否を優先度付きで整理する
+
+## Review Progress Log
+- 2026-03-19: レビュー開始。対象コミット `00090b6a58c9226f6e4a27c6a83a1c99f13bc663` が HEAD であり、実質差分が `app.js` の保存警告処理であることを確認。
+- 2026-03-19: `loadState()` が `corrupted` / `unavailable` を立てても、`init() -> syncState() -> saveState()` で即座に警告状態が上書きされることをコード上で確認。
+- 2026-03-19: linkedom で `破損JSON` と `localStorage 全拒否` を再現し、前者は警告非表示、後者は `write-failed` 文言へ変わることを確認。
+
+## Review Verification Log
+- 2026-03-19: `node` + linkedom（保存値を `{broken json` に破損） -> 初期化成功 / 保存データは自動置換されるが `セーブ警告` は表示されない
+- 2026-03-19: `node` + linkedom（`getItem/setItem/removeItem` が常に例外） -> 初期化成功 / 警告は表示されるが文言が `write-failed` 扱いになる

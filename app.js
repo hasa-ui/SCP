@@ -16,15 +16,18 @@
   };
 
   let state = null;
-  let storageAvailable = true;
+  let storageWarningReason = "";
+  let preserveInitialStorageWarning = false;
 
   document.addEventListener("DOMContentLoaded", init);
 
   function init() {
     state = loadState() || createInitialState();
+    preserveInitialStorageWarning = Boolean(state.storageWarningReason);
     syncState();
     bindEvents();
     render();
+    preserveInitialStorageWarning = false;
   }
 
   function bindEvents() {
@@ -200,7 +203,8 @@
         makeLogEntry("配属完了。記録整合管理局の当直が開始された。"),
         makeLogEntry("初期権限は CL-2。案件の整合確認と採用判断を担当する。"),
       ],
-      storageWarning: !storageAvailable,
+      storageWarning: Boolean(storageWarningReason),
+      storageWarningReason,
       overlay: null,
       gameOver: false,
       ending: null,
@@ -208,58 +212,89 @@
   }
 
   function loadState() {
+    let raw = null;
     try {
-      const raw = localStorage.getItem(SAVE_KEY);
-      if (!raw) {
-        return null;
-      }
+      raw = localStorage.getItem(SAVE_KEY);
+    } catch (error) {
+      setStorageWarning("unavailable");
+      return null;
+    }
+
+    if (!raw) {
+      clearStorageWarning();
+      return null;
+    }
+
+    try {
       const parsed = JSON.parse(raw);
       if (parsed.version !== 1) {
         return null;
       }
+      parsed.storageWarning = false;
+      parsed.storageWarningReason = "";
+      clearStorageWarning();
       return parsed;
     } catch (error) {
-      storageAvailable = false;
+      setStorageWarning("corrupted");
       return null;
     }
   }
 
   function saveState() {
-    if (!storageAvailable) {
-      if (state) {
-        state.storageWarning = true;
-      }
-      return false;
+    const initialWarningReason = state ? state.storageWarningReason : "";
+    const shouldPreserveWarning =
+      preserveInitialStorageWarning && Boolean(initialWarningReason);
+
+    if (state && !shouldPreserveWarning) {
+      state.storageWarning = false;
+      state.storageWarningReason = "";
     }
+
     try {
-      localStorage.setItem(SAVE_KEY, JSON.stringify(state));
+      const payload = shouldPreserveWarning
+        ? {
+            ...state,
+            storageWarning: false,
+            storageWarningReason: "",
+          }
+        : state;
+      localStorage.setItem(SAVE_KEY, JSON.stringify(payload));
+      if (!shouldPreserveWarning) {
+        clearStorageWarning();
+      }
       return true;
     } catch (error) {
-      markStorageUnavailable();
+      if (!shouldPreserveWarning || initialWarningReason === "corrupted") {
+        setStorageWarning("write-failed");
+      }
       return false;
     }
   }
 
   function clearSavedState() {
-    if (!storageAvailable) {
-      if (state) {
-        state.storageWarning = true;
-      }
-      return false;
-    }
     try {
       localStorage.removeItem(SAVE_KEY);
+      clearStorageWarning();
       return true;
     } catch (error) {
-      markStorageUnavailable();
+      setStorageWarning("unavailable");
       return false;
     }
   }
 
-  function markStorageUnavailable() {
-    storageAvailable = false;
+  function setStorageWarning(reason) {
+    storageWarningReason = reason;
     if (state) {
       state.storageWarning = true;
+      state.storageWarningReason = reason;
+    }
+  }
+
+  function clearStorageWarning() {
+    storageWarningReason = "";
+    if (state) {
+      state.storageWarning = false;
+      state.storageWarningReason = "";
     }
   }
 
@@ -766,10 +801,22 @@
       }
       ${
         state.storageWarning
-          ? `<div class="warning-block small"><strong>セーブ警告</strong><br />この環境ではローカル保存に失敗しました。進行は現在のタブ内でのみ保持されます。</div>`
+          ? `<div class="warning-block small"><strong>セーブ警告</strong><br />${escapeHtml(
+              getStorageWarningMessage()
+            )}</div>`
           : ""
       }
     `;
+  }
+
+  function getStorageWarningMessage() {
+    if (state.storageWarningReason === "corrupted") {
+      return "既存の保存データを読み込めませんでした。新しい進行で再開しています。";
+    }
+    if (state.storageWarningReason === "write-failed") {
+      return "最新の進行をローカル保存できませんでした。現在のタブを閉じると失われる可能性があります。";
+    }
+    return "この環境ではローカル保存を利用できません。進行は現在のタブ内でのみ保持されます。";
   }
 
   function renderStats() {

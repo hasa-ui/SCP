@@ -27,3 +27,40 @@
 - 2026-03-20: `node --check js/utils.js && node --check js/data-tools.js && node --check js/save-manager.js && node --check js/corruption-engine.js && node --check js/ending-engine.js && node --check js/game-engine.js && node --check js/renderers.js` 成功
 - 2026-03-20: `node scripts/validate-game-data.mjs` 成功 (`Game data validation passed.`)
 - 2026-03-20: `node /tmp/linkedom/verify-phase1-browser.mjs` 成功 (`DEBUG_MODE_OK`, `SAVE_MIGRATION_OK`, `FULL_PLAYTHROUGH_OK`)
+
+---
+
+# Review Task: d9d7d0db7c043101db0cb0eadc17712b52ac255e
+
+## Plan
+- [x] 変更差分と影響ファイルを確認する
+- [x] 主要フロー（保存・進行・デバッグ）の回帰観点を点検する
+- [x] 再現確認を実行して指摘候補を絞り込む
+
+## Progress Log
+- 2026-03-20: Phase 1 実装コミットの差分と新規モジュールを確認。
+- 2026-03-20: セーブ移行処理とイベント制御を重点的に精査し、将来版セーブの扱いとゲーム終了後のデバッグ切替を確認。
+
+## Verification Log
+- 2026-03-20: `node /tmp/linkedom/verify-phase1-browser.mjs` 成功
+- 2026-03-20: 将来版セーブ (`version: 3`) を投入したブート再現で、未知形式を拒否せず v2 として上書きすることを確認
+- 2026-03-20: フルプレイスルー後に `toggle-debug` を発火してもデバッグ表示が開かないことを確認
+
+---
+
+# Fix Task: future-save and post-ending debug
+
+## Plan
+- [x] 将来版セーブの読み込み経路を見直し、自動上書きを防ぐ
+- [x] ゲーム終了後も `toggle-debug` だけは操作できるようにする
+- [x] 回帰検証を実行し、ログを追記する
+
+## Progress Log
+- 2026-03-20: `js/save-manager.js` で `CURRENT_SAVE_VERSION` を超える保存データを `unsupported-version` として拒否し、初期化直後の自動保存をスキップする方針に変更。
+- 2026-03-20: `app.js` のゲーム終了後クリックガードから `toggle-debug` を除外し、終幕後のデバッグ表示を許可。
+
+## Verification Log
+- 2026-03-20: `node --check app.js && node --check js/save-manager.js && node --check js/game-engine.js` 成功
+- 2026-03-20: `node /tmp/linkedom/verify-phase1-browser.mjs` 成功 (`DEBUG_MODE_OK`, `SAVE_MIGRATION_OK`, `FULL_PLAYTHROUGH_OK`)
+- 2026-03-20: 将来版セーブ (`version: 3`) を投入したブート再現で、既存セーブが上書きされず `unsupported-version` 警告が表示されることを確認 (`FUTURE_SAVE_REJECT_OK`)
+- 2026-03-20: `gameOver: true` の保存状態から `toggle-debug` を操作し、終幕後もデバッグ表示が開くことを確認 (`POST_ENDING_DEBUG_OK`)

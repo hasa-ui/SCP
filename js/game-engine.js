@@ -14,7 +14,9 @@
           warningReason: loaded.warningReason,
         });
       preserveInitialStorageWarning = Boolean(state.storageWarningReason);
-      syncState();
+      if (!loaded.skipInitialSave) {
+        syncState();
+      }
       return state;
     }
 

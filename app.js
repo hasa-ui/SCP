@@ -54,7 +54,7 @@
       const action = actionNode.dataset.action;
       const state = controller.getState();
 
-      if (state.gameOver && !["new-game", "reset-save", "overlay-next"].includes(action)) {
+      if (state.gameOver && !["new-game", "reset-save", "overlay-next", "toggle-debug"].includes(action)) {
         return;
       }
 

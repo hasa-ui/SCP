@@ -48,12 +48,12 @@
         raw = localStorage.getItem(saveKey);
       } catch (error) {
         storageWarningReason = "unavailable";
-        return { state: null, warningReason: "unavailable" };
+        return { state: null, warningReason: "unavailable", skipInitialSave: false };
       }
 
       if (!raw) {
         storageWarningReason = "";
-        return { state: null, warningReason: "" };
+        return { state: null, warningReason: "", skipInitialSave: false };
       }
 
       let parsed = null;
@@ -61,7 +61,17 @@
         parsed = JSON.parse(raw);
       } catch (error) {
         storageWarningReason = "corrupted";
-        return { state: null, warningReason: "corrupted" };
+        return { state: null, warningReason: "corrupted", skipInitialSave: false };
+      }
+
+      const parsedVersion = Number(parsed.version || 1);
+      if (parsedVersion > dataTools.CURRENT_SAVE_VERSION) {
+        storageWarningReason = "unsupported-version";
+        return {
+          state: null,
+          warningReason: "unsupported-version",
+          skipInitialSave: true,
+        };
       }
 
       const migrated = migrateLoadedState(parsed, gameData);
@@ -71,6 +81,7 @@
       return {
         state: migrated,
         warningReason: "",
+        skipInitialSave: false,
       };
     }
 
@@ -234,6 +245,9 @@
     function getStorageWarningMessage(reason) {
       if (reason === "corrupted") {
         return "既存の保存データを読み込めませんでした。新しい進行で再開しています。";
+      }
+      if (reason === "unsupported-version") {
+        return "この保存データは新しいバージョンで作成されています。現在の版では読み込まず、元の保存は保持したまま新しい進行で開始しています。";
       }
       if (reason === "write-failed") {
         return "最新の進行をローカル保存できませんでした。現在のタブを閉じると失われる可能性があります。";

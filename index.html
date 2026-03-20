@@ -5,7 +5,14 @@
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
     <title>SCP: 収容差分 / Archive Drift</title>
     <link rel="stylesheet" href="styles.css" />
+    <script defer src="js/utils.js"></script>
+    <script defer src="js/data-tools.js"></script>
     <script defer src="game-data.js"></script>
+    <script defer src="js/save-manager.js"></script>
+    <script defer src="js/corruption-engine.js"></script>
+    <script defer src="js/ending-engine.js"></script>
+    <script defer src="js/game-engine.js"></script>
+    <script defer src="js/renderers.js"></script>
     <script defer src="app.js"></script>
   </head>
   <body>
@@ -17,6 +24,7 @@
           <p class="subtitle">文書の整合が、そのまま収容の成否になる。</p>
         </div>
         <div class="topbar-actions">
+          <button id="debug-mode-button" class="ghost-button" data-action="toggle-debug">デバッグ</button>
           <button id="new-game-button" class="ghost-button" data-action="new-game">新規周回</button>
           <button id="reset-save-button" class="ghost-button" data-action="reset-save">セーブ削除</button>
         </div>
@@ -73,6 +81,11 @@
           <section class="panel">
             <h2>判断</h2>
             <div id="decision-controls" class="control-stack"></div>
+          </section>
+
+          <section class="panel">
+            <h2>Debug</h2>
+            <div id="debug-panel" class="control-stack"></div>
           </section>
         </aside>
       </main>

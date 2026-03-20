@@ -1,4 +1,4 @@
-window.GAME_DATA = {
+window.RAW_GAME_DATA = {
   meta: {
     title: "SCP: 収容差分",
     subtitle: "Archive Drift",
@@ -1022,3 +1022,5 @@ window.GAME_DATA = {
     },
   ],
 };
+
+window.GAME_DATA = window.RAW_GAME_DATA;

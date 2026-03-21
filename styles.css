@@ -159,6 +159,18 @@ button {
   font-size: 0.82rem;
 }
 
+.tag-focus {
+  border-color: rgba(49, 88, 71, 0.22);
+  background: rgba(49, 88, 71, 0.12);
+  color: var(--safe);
+}
+
+.tag-compare {
+  border-color: rgba(139, 47, 29, 0.2);
+  background: rgba(139, 47, 29, 0.1);
+  color: var(--signal);
+}
+
 .stat-group {
   display: grid;
   gap: 10px;
@@ -240,6 +252,13 @@ button {
   align-items: flex-start;
 }
 
+.doc-tags {
+  display: flex;
+  gap: 6px;
+  flex-wrap: wrap;
+  justify-content: flex-end;
+}
+
 .muted {
   color: var(--muted);
 }
@@ -295,6 +314,61 @@ button {
   border: 1px solid rgba(19, 33, 43, 0.08);
 }
 
+.guide-card {
+  display: grid;
+  gap: 12px;
+  padding: 14px;
+  border-radius: 16px;
+  border: 1px solid rgba(49, 88, 71, 0.2);
+  background: linear-gradient(180deg, rgba(49, 88, 71, 0.1), rgba(255, 255, 255, 0.78));
+}
+
+.guide-head {
+  display: flex;
+  justify-content: space-between;
+  gap: 12px;
+  align-items: flex-start;
+}
+
+.guide-steps,
+.checklist-list,
+.recommend-list {
+  display: grid;
+  gap: 10px;
+}
+
+.check-item {
+  display: grid;
+  gap: 4px;
+  padding: 10px 12px;
+  border-radius: 14px;
+  border: 1px solid rgba(19, 33, 43, 0.08);
+  background: rgba(255, 255, 255, 0.68);
+}
+
+.check-item.done {
+  border-color: rgba(49, 88, 71, 0.18);
+  background: rgba(49, 88, 71, 0.09);
+}
+
+.recommend-card {
+  display: grid;
+  gap: 8px;
+  padding: 12px;
+  border-radius: 14px;
+  border: 1px solid rgba(19, 33, 43, 0.08);
+  background: rgba(255, 255, 255, 0.66);
+}
+
+.recommend-card.viewed {
+  border-color: rgba(49, 88, 71, 0.18);
+}
+
+.emphasis-text {
+  margin-top: 10px;
+  color: var(--signal);
+}
+
 .warning-block {
   border-color: rgba(139, 47, 29, 0.24);
   background: linear-gradient(180deg, rgba(139, 47, 29, 0.08), rgba(139, 47, 29, 0.02));
@@ -333,7 +407,8 @@ button {
 }
 
 .diff-row.changed {
-  background: rgba(139, 47, 29, 0.08);
+  background: linear-gradient(90deg, rgba(139, 47, 29, 0.14), rgba(255, 255, 255, 0.92));
+  border-left: 4px solid rgba(139, 47, 29, 0.42);
 }
 
 .diff-row.empty {
@@ -434,11 +509,31 @@ textarea {
   margin-right: 8px;
 }
 
+.interpretation-card.selected,
+.decision-card.selected {
+  border-color: rgba(139, 47, 29, 0.24);
+  background: linear-gradient(180deg, rgba(139, 47, 29, 0.08), rgba(255, 255, 255, 0.78));
+}
+
 .log-entry time {
   display: block;
   margin-bottom: 6px;
   font-size: 0.8rem;
   color: var(--muted);
+}
+
+.log-entry.focus {
+  border-color: rgba(139, 47, 29, 0.18);
+}
+
+.log-entry.positive {
+  border-color: rgba(49, 88, 71, 0.2);
+  background: rgba(49, 88, 71, 0.08);
+}
+
+.log-entry.alert {
+  border-color: rgba(111, 31, 31, 0.22);
+  background: rgba(111, 31, 31, 0.08);
 }
 
 .overlay {
@@ -482,6 +577,10 @@ textarea {
   margin: 18px 0;
 }
 
+.report-grid {
+  margin: 18px 0;
+}
+
 .badge-risk-high {
   color: #7a1f1f;
 }
@@ -512,6 +611,18 @@ textarea {
     grid-template-columns: 1fr;
   }
 
+  .reader {
+    order: 1;
+  }
+
+  .inspector {
+    order: 2;
+  }
+
+  .sidebar {
+    order: 3;
+  }
+
   .reader-panel {
     min-height: auto;
   }
@@ -530,14 +641,33 @@ textarea {
     flex-direction: column;
   }
 
+  .topbar-actions {
+    width: 100%;
+  }
+
+  .topbar-actions > button {
+    flex: 1 1 140px;
+  }
+
   .panel {
     padding: 16px;
     border-radius: 18px;
+  }
+
+  .guide-head,
+  .doc-card header,
+  .reader-header-top {
+    flex-direction: column;
   }
 
   .summary-grid,
   .diff-grid,
   .overlay-card .ending-score {
     grid-template-columns: 1fr;
+  }
+
+  .overlay-card {
+    padding: 22px 18px;
+    border-radius: 20px;
   }
 }

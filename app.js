@@ -75,8 +75,16 @@
           controller.toggleDebugMode();
           render();
           return;
+        case "dismiss-tutorial":
+          controller.dismissTutorial();
+          render();
+          return;
         case "open-doc":
           controller.openDocument(actionNode.dataset.docId);
+          render();
+          return;
+        case "apply-compare-hint":
+          controller.setCompareHintSelection((actionNode.dataset.docIds || "").split("|"));
           render();
           return;
         case "toggle-redaction":

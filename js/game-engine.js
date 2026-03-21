@@ -90,6 +90,168 @@
       return saveManager.getStorageWarningMessage(state.storageWarningReason);
     }
 
+    function getMustReadDocs(caseData) {
+      if (!caseData) {
+        return [];
+      }
+      const progress = getCaseProgress(caseData.id);
+      const fallbackIds = (caseData.documents || []).slice(0, 2).map((doc) => doc.id);
+      const mustReadIds = caseData.compareHints[0]?.ids?.length ? caseData.compareHints[0].ids : fallbackIds;
+      return mustReadIds
+        .map((docId) => caseData.documents.find((doc) => doc.id === docId))
+        .filter(Boolean)
+        .map((doc) => {
+          const access = getDocumentAccess(caseData, doc);
+          return {
+            id: doc.id,
+            title: doc.title,
+            available: access.available,
+            reason: access.reason,
+            read: progress.readDocs.includes(doc.id),
+          };
+        });
+    }
+
+    function getRecommendedCompareHints(caseData) {
+      if (!caseData) {
+        return [];
+      }
+      const progress = getCaseProgress(caseData.id);
+      return (caseData.compareHints || []).map((hint, index) => {
+        const docs = hint.ids
+          .map((docId) => caseData.documents.find((doc) => doc.id === docId))
+          .filter(Boolean);
+        const available = docs.length === 2 && docs.every((doc) => getDocumentAccess(caseData, doc).available);
+        return {
+          key: `${caseData.id}:${index}`,
+          ids: [...hint.ids],
+          label: hint.label,
+          hint: hint.hint,
+          docs: docs.map((doc) => ({ id: doc.id, title: doc.title })),
+          available,
+          viewed: progress.comparePairsViewed.includes(utils.pairKey(hint.ids)),
+          unreadDocs: docs.filter((doc) => !progress.readDocs.includes(doc.id)).map((doc) => doc.title),
+        };
+      });
+    }
+
+    function getApprovalChecklist(caseData) {
+      if (!caseData) {
+        return {
+          ready: false,
+          completeCount: 0,
+          totalCount: 0,
+          items: [],
+        };
+      }
+      const progress = getCaseProgress(caseData.id);
+      const accessibleDocs = getAccessibleDocuments(caseData);
+      const unreadDocs = accessibleDocs.filter((doc) => !progress.readDocs.includes(doc.id));
+      const memoPresent = Object.values(progress.annotationByDoc).some((value) => String(value || "").trim());
+      const compareDone = progress.comparePairsViewed.length > 0;
+      const mustReadPending = getMustReadDocs(caseData).filter((doc) => doc.available && !doc.read);
+      const items = [
+        {
+          id: "read-docs",
+          label: "閲覧可能な文書を確認する",
+          done: unreadDocs.length === 0,
+          detail:
+            unreadDocs.length === 0
+              ? "未読文書なし"
+              : `未読: ${unreadDocs.map((doc) => doc.title).join(" / ")}`,
+        },
+        {
+          id: "must-read",
+          label: "必読文書を押さえる",
+          done: mustReadPending.length === 0,
+          detail:
+            mustReadPending.length === 0
+              ? "初回導線の必読文書を確認済み"
+              : `残り: ${mustReadPending.map((doc) => doc.title).join(" / ")}`,
+        },
+        {
+          id: "compare",
+          label: "比較照合を行う",
+          done: compareDone,
+          detail: compareDone ? "比較履歴あり" : "推奨比較を 1 件以上確認すると精度が上がる",
+        },
+        {
+          id: "interpretation",
+          label: "解釈を選ぶ",
+          done: Boolean(progress.selectedInterpretationId),
+          detail: progress.selectedInterpretationId ? "選択済み" : "何が起きているかを選ぶ",
+        },
+        {
+          id: "decision",
+          label: "対処方針を選ぶ",
+          done: Boolean(progress.selectedDecisionId),
+          detail: progress.selectedDecisionId ? "選択済み" : "何を実行するかを選ぶ",
+        },
+        {
+          id: "memo",
+          label: "引き継ぎメモを残す",
+          done: memoPresent,
+          detail: memoPresent ? "分析メモあり" : "核心語を含む短いメモが推奨",
+        },
+        {
+          id: "approval",
+          label: "判断を承認する",
+          done: progress.approved,
+          detail: progress.approved ? "承認済み" : "内容が固まったら承認",
+        },
+      ];
+
+      return {
+        ready: unreadDocs.length === 0 && progress.approved,
+        completeCount: items.filter((item) => item.done).length,
+        totalCount: items.length,
+        items,
+      };
+    }
+
+    function getTutorialState() {
+      const caseData = getCurrentCase();
+      if (!caseData) {
+        return {
+          visible: false,
+          steps: [],
+          mustReadDocs: [],
+          compareHints: [],
+        };
+      }
+      const mustReadDocs = getMustReadDocs(caseData);
+      const compareHints = getRecommendedCompareHints(caseData);
+      const progress = getCaseProgress(caseData.id);
+      const visible =
+        state.currentCaseIndex === 0 &&
+        state.completedCaseIds.length === 0 &&
+        !state.flags.includes("tutorialDismissed");
+
+      return {
+        visible,
+        mustReadDocs,
+        compareHints,
+        steps: [
+          {
+            label: "必読文書を読む",
+            done: mustReadDocs.filter((doc) => doc.available).every((doc) => doc.read),
+          },
+          {
+            label: "推奨比較を確認する",
+            done: compareHints.some((hint) => hint.viewed),
+          },
+          {
+            label: "解釈と対処方針を選ぶ",
+            done: Boolean(progress.selectedInterpretationId && progress.selectedDecisionId),
+          },
+          {
+            label: "承認して日次処理へ進む",
+            done: progress.approved,
+          },
+        ],
+      };
+    }
+
     function buildDebugSnapshot(validationReport) {
       const currentCase = getCurrentCase();
       return {
@@ -132,6 +294,13 @@
       persist();
     }
 
+    function dismissTutorial() {
+      if (!state.flags.includes("tutorialDismissed")) {
+        state.flags.push("tutorialDismissed");
+        persist();
+      }
+    }
+
     function setViewMode(mode) {
       state.currentView.mode = mode;
       persist();
@@ -139,6 +308,14 @@
 
     function setCompareSelection(slot, value) {
       state.currentView.compareIds[slot] = value || "";
+      persist();
+    }
+
+    function setCompareHintSelection(ids) {
+      if (!Array.isArray(ids) || ids.length !== 2) {
+        return;
+      }
+      state.currentView.compareIds = [ids[0] || "", ids[1] || ""];
       persist();
     }
 
@@ -438,6 +615,12 @@
         report: {
           caseTitle: caseData.title,
           summary: `${caseData.title} を ${decision.label} として処理。`,
+          interpretationLabel: interpretation.label,
+          decisionLabel: decision.label,
+          compareCount: progress.comparePairsViewed.length,
+          readCount: accessibleDocs.filter((doc) => progress.readDocs.includes(doc.id)).length,
+          accessibleDocCount: accessibleDocs.length,
+          memoPresent: Object.values(progress.annotationByDoc).some((value) => String(value || "").trim()),
           lines,
           delta: utils.formatEffectSummary(effects),
         },
@@ -594,12 +777,18 @@
       getAccessibleDocuments,
       getDayReadiness,
       getStorageWarningMessage,
+      getMustReadDocs,
+      getRecommendedCompareHints,
+      getApprovalChecklist,
+      getTutorialState,
       buildDebugSnapshot,
       startNewGame,
       resetSave,
       toggleDebugMode,
+      dismissTutorial,
       setViewMode,
       setCompareSelection,
+      setCompareHintSelection,
       setInterpretation,
       setDecision,
       setAnnotationDraft,

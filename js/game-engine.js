@@ -5,6 +5,7 @@
     const { gameData, saveManager, endingEngine } = options;
     let state = null;
     let preserveInitialStorageWarning = false;
+    let saveReadOnlySession = false;
 
     function init() {
       const loaded = saveManager.loadState(gameData);
@@ -14,6 +15,7 @@
           warningReason: loaded.warningReason,
         });
       preserveInitialStorageWarning = Boolean(state.storageWarningReason);
+      saveReadOnlySession = Boolean(loaded.skipInitialSave);
       if (!loaded.skipInitialSave) {
         syncState();
       }
@@ -111,6 +113,7 @@
         debugEnabled: state?.debug?.enabled,
       });
       preserveInitialStorageWarning = false;
+      saveReadOnlySession = false;
       persist();
     }
 
@@ -120,6 +123,7 @@
         debugEnabled: state?.debug?.enabled,
       });
       preserveInitialStorageWarning = false;
+      saveReadOnlySession = false;
       persist();
     }
 
@@ -571,6 +575,9 @@
     }
 
     function persist() {
+      if (saveReadOnlySession) {
+        return;
+      }
       saveManager.saveState(state, {
         preserveWarning: preserveInitialStorageWarning,
       });

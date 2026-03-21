@@ -64,3 +64,40 @@
 - 2026-03-20: `node /tmp/linkedom/verify-phase1-browser.mjs` 成功 (`DEBUG_MODE_OK`, `SAVE_MIGRATION_OK`, `FULL_PLAYTHROUGH_OK`)
 - 2026-03-20: 将来版セーブ (`version: 3`) を投入したブート再現で、既存セーブが上書きされず `unsupported-version` 警告が表示されることを確認 (`FUTURE_SAVE_REJECT_OK`)
 - 2026-03-20: `gameOver: true` の保存状態から `toggle-debug` を操作し、終幕後もデバッグ表示が開くことを確認 (`POST_ENDING_DEBUG_OK`)
+
+---
+
+# Review Task: 5bb67794bf20f659de020482a1ca59d029be58e7
+
+## Plan
+- [x] 変更差分と影響箇所を確認する
+- [x] 変更された保存・デバッグ経路を再現確認する
+- [x] 指摘候補を優先度付きで整理する
+
+## Progress Log
+- 2026-03-21: `app.js` / `js/game-engine.js` / `js/save-manager.js` の差分を確認し、将来版セーブ拒否とゲーム終了後デバッグ許可の実装を精査開始。
+
+## Verification Log
+- 2026-03-21: `git show --unified=80 5bb67794bf20f659de020482a1ca59d029be58e7` で差分と周辺文脈を確認
+
+- 2026-03-21: 将来版セーブ (`version: 3`) を投入して起動し、初期表示では元セーブが保持される一方、`toggle-debug` の1回目操作で保存内容が v2 に上書きされることを再現。
+- 2026-03-21: `node`+`linkedom` の再現で `INIT_VERSION=3`, `WARNING_VISIBLE=true`, `AFTER_CLICK_VERSION=2` を確認。
+
+---
+
+# Fix Task: future-save read-only session
+
+## Plan
+- [x] 将来版セーブ検出時にセッション全体を read-only 保存扱いにする
+- [x] `new-game` / `reset-save` など明示操作では通常保存へ戻せるようにする
+- [x] 再現ケースと既存スモークで回帰検証する
+
+## Progress Log
+- 2026-03-21: `js/game-engine.js` に `saveReadOnlySession` を追加し、互換外セーブ起動中の `persist()` を全面停止するよう変更。
+- 2026-03-21: `new-game` / `reset-save` 実行時は read-only 状態を解除して、新しいローカル保存へ切り替えられるよう調整。
+
+## Verification Log
+- 2026-03-21: `node --check js/game-engine.js` 成功
+- 2026-03-21: `node /tmp/linkedom/verify-phase1-browser.mjs` 成功 (`DEBUG_MODE_OK`, `SAVE_MIGRATION_OK`, `FULL_PLAYTHROUGH_OK`)
+- 2026-03-21: 将来版セーブ (`version: 3`) を投入して起動後に `toggle-debug` を実行しても、元セーブが保持されることを確認 (`FUTURE_SAVE_SESSION_READONLY_OK`)
+- 2026-03-21: 将来版セーブ起動後でも `new-game` 実行時は現行版セーブへ切り替わることを確認 (`FUTURE_SAVE_NEW_GAME_UNLOCK_OK`)

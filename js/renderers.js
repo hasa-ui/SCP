@@ -49,6 +49,8 @@
     }
 
     const report = state.reports[state.reports.length - 1];
+    const tutorial = controller.getTutorialState();
+    const mustReadDocs = controller.getMustReadDocs(caseData);
     target.innerHTML = `
       <div class="summary-grid">
         <div>
@@ -65,10 +67,59 @@
         <div class="muted small">${utils.escapeHtml(caseData.summary)}</div>
       </div>
       ${
+        tutorial.visible
+          ? `
+            <div class="guide-card">
+              <div class="guide-head">
+                <div>
+                  <strong>初回プレイガイド</strong>
+                  <div class="small muted">まずは必読文書、次に比較、最後に判断承認の順で進める。</div>
+                </div>
+                <button class="minor-button" data-action="dismiss-tutorial">閉じる</button>
+              </div>
+              <div class="guide-steps">
+                ${tutorial.steps
+                  .map(
+                    (step) => `
+                      <div class="check-item ${step.done ? "done" : ""}">
+                        <strong>${step.done ? "完了" : "未完了"}</strong>
+                        <span>${utils.escapeHtml(step.label)}</span>
+                      </div>
+                    `
+                  )
+                  .join("")}
+              </div>
+            </div>
+          `
+          : ""
+      }
+      ${
+        mustReadDocs.length
+          ? `
+            <div class="status-block small">
+              <strong>当日の必読文書</strong><br />
+              ${mustReadDocs
+                .map(
+                  (doc) =>
+                    `${doc.read ? "済" : "未"}: ${utils.escapeHtml(doc.title)}${
+                      doc.available ? "" : ` (${utils.escapeHtml(doc.reason)})`
+                    }`
+                )
+                .join("<br />")}
+            </div>
+          `
+          : ""
+      }
+      ${
         report
-          ? `<div class="status-block small"><strong>前日報告</strong><br />${utils.escapeHtml(
-              report.summary
-            )}</div>`
+          ? `
+            <div class="status-block small">
+              <strong>前日報告</strong><br />
+              ${utils.escapeHtml(report.summary)}<br />
+              解釈: ${utils.escapeHtml(report.interpretationLabel || "記録なし")}<br />
+              対処: ${utils.escapeHtml(report.decisionLabel || "記録なし")}
+            </div>
+          `
           : ""
       }
       ${
@@ -180,11 +231,19 @@
     }
 
     const progress = controller.getCaseProgress(caseData.id);
+    const mustReadIds = new Set(controller.getMustReadDocs(caseData).map((doc) => doc.id));
+    const compareRecommendedIds = new Set(
+      controller
+        .getRecommendedCompareHints(caseData)
+        .flatMap((hint) => (hint.available || hint.viewed ? hint.ids : []))
+    );
     target.innerHTML = caseData.documents
       .map((doc) => {
         const access = controller.getDocumentAccess(caseData, doc);
         const isActive = state.currentView.currentDocId === doc.id && state.currentView.mode === "document";
         const isRead = progress.readDocs.includes(doc.id);
+        const isMustRead = mustReadIds.has(doc.id);
+        const isCompareRecommended = compareRecommendedIds.has(doc.id);
         return `
           <article class="doc-card ${isActive ? "active" : ""} ${access.available ? "" : "locked"}">
             <header>
@@ -192,8 +251,17 @@
                 <strong>${utils.escapeHtml(doc.title)}</strong>
                 <div class="small muted">${utils.escapeHtml(doc.author)} / CL-${doc.clearance}</div>
               </div>
-              <span class="tag">${access.available ? (isRead ? "既読" : "未読") : access.reason}</span>
+              <div class="doc-tags">
+                <span class="tag">${access.available ? (isRead ? "既読" : "未読") : access.reason}</span>
+                ${isMustRead && access.available ? `<span class="tag tag-focus">必読</span>` : ""}
+                ${isCompareRecommended && access.available ? `<span class="tag tag-compare">比較推奨</span>` : ""}
+              </div>
             </header>
+            ${
+              isMustRead && access.available && !isRead
+                ? `<div class="small emphasis-text">初回導線で優先確認する文書です。</div>`
+                : ""
+            }
             <div class="inline-actions">
               <button class="minor-button" data-action="open-doc" data-doc-id="${doc.id}" ${
                 access.available ? "" : "disabled"
@@ -239,6 +307,10 @@
     const presentedText = corruptionEngine.getPresentedText(doc, redacted, state, "reader");
     const annotation = progress.annotationByDoc[doc.id] || "";
     const warnings = corruptionEngine.getReaderWarnings(doc, state);
+    const mustReadIds = new Set(controller.getMustReadDocs(caseData).map((item) => item.id));
+    const relatedHints = controller
+      .getRecommendedCompareHints(caseData)
+      .filter((hint) => hint.ids.includes(doc.id));
 
     header.innerHTML = `
       <div class="reader-header-top">
@@ -253,6 +325,7 @@
         <span class="meta-chip mono">${utils.escapeHtml(doc.createdAt)}</span>
         <span class="meta-chip">CL-${doc.clearance}</span>
         <span class="meta-chip">${utils.escapeHtml(doc.version)}</span>
+        ${mustReadIds.has(doc.id) ? `<span class="tag tag-focus">初回必読</span>` : ""}
         ${doc.dangerTags.map((tag) => `<span class="tag">${utils.escapeHtml(tag)}</span>`).join("")}
       </div>
     `;
@@ -261,6 +334,21 @@
       ${
         warnings.length
           ? `<div class="warning-block">${warnings.map(utils.escapeHtml).join("<br />")}</div>`
+          : ""
+      }
+      ${
+        relatedHints.length
+          ? `
+            <div class="status-block small">
+              <strong>比較の観点</strong><br />
+              ${relatedHints
+                .map(
+                  (hint) =>
+                    `${utils.escapeHtml(hint.label)}: ${utils.escapeHtml(hint.hint)}`
+                )
+                .join("<br />")}
+            </div>
+          `
           : ""
       }
       <div class="document-body">${renderParagraphs(presentedText)}</div>
@@ -307,6 +395,11 @@
       "compare"
     );
     const rows = corruptionEngine.buildDiffRows(leftText, rightText);
+    const changedCount = rows.filter((row) => row.changed).length;
+    const unchangedCount = rows.length - changedCount;
+    const matchingHint = controller
+      .getRecommendedCompareHints(caseData)
+      .find((hint) => utils.pairKey(hint.ids) === utils.pairKey([leftId, rightId]));
 
     return {
       header: `
@@ -320,12 +413,24 @@
         <div class="reader-meta">
           <span class="meta-chip">${utils.escapeHtml(leftDoc.title)}</span>
           <span class="meta-chip">${utils.escapeHtml(rightDoc.title)}</span>
+          <span class="meta-chip">差分 ${changedCount} 行</span>
+          <span class="meta-chip">一致 ${unchangedCount} 行</span>
         </div>
       `,
       content: `
         ${
           state.player.contamination >= 55
             ? `<div class="warning-block small">汚染度上昇により、比較表示の一部が欠損して見える可能性があります。</div>`
+            : ""
+        }
+        ${
+          matchingHint
+            ? `
+              <div class="status-block small">
+                <strong>${utils.escapeHtml(matchingHint.label)}</strong><br />
+                ${utils.escapeHtml(matchingHint.hint)}
+              </div>
+            `
             : ""
         }
         <div class="diff-grid">
@@ -367,6 +472,8 @@
       return;
     }
     const readiness = controller.getDayReadiness(caseData);
+    const compareHints = controller.getRecommendedCompareHints(caseData);
+    const mustReadDocs = controller.getMustReadDocs(caseData);
     const notes = (caseData.continuityNotes || [])
       .filter((note) => state.flags.includes(note.flag))
       .map((note) => `<div class="summary-note small">${utils.escapeHtml(note.text)}</div>`)
@@ -386,15 +493,34 @@
         <div class="small muted">判断準備</div>
         <div class="small">${utils.escapeHtml(readiness.message)}</div>
       </div>
+      ${
+        mustReadDocs.length
+          ? `
+            <div class="control-card">
+              <strong>必読文書</strong>
+              <div class="small">
+                ${mustReadDocs
+                  .map(
+                    (doc) =>
+                      `${doc.read ? "済" : "未"} / ${utils.escapeHtml(doc.title)}${
+                        doc.available ? "" : ` (${utils.escapeHtml(doc.reason)})`
+                      }`
+                  )
+                  .join("<br />")}
+              </div>
+            </div>
+          `
+          : ""
+      }
       <div class="control-card">
         <strong>比較ヒント</strong>
         <div class="small">
-          ${caseData.compareHints
+          ${compareHints
             .map(
               (hint) =>
-                `<div><strong>${utils.escapeHtml(hint.label)}</strong><br />${utils.escapeHtml(
-                  hint.hint
-                )}</div>`
+                `<div><strong>${utils.escapeHtml(hint.label)}</strong> ${
+                  hint.viewed ? `<span class="tag">確認済</span>` : ""
+                }<br />${utils.escapeHtml(hint.hint)}</div>`
             )
             .join("<br />")}
         </div>
@@ -413,8 +539,45 @@
     }
     const accessibleDocs = controller.getAccessibleDocuments(caseData);
     const [leftId, rightId] = state.currentView.compareIds;
+    const recommendations = controller.getRecommendedCompareHints(caseData);
 
     target.innerHTML = `
+      ${
+        recommendations.length
+          ? `
+            <div class="control-card">
+              <strong>おすすめ比較</strong>
+              <div class="recommend-list">
+                ${recommendations
+                  .map(
+                    (hint) => `
+                      <div class="recommend-card ${hint.viewed ? "viewed" : ""}">
+                        <div class="inline-actions">
+                          <strong>${utils.escapeHtml(hint.label)}</strong>
+                          ${hint.viewed ? `<span class="tag">確認済</span>` : `<span class="tag tag-compare">推奨</span>`}
+                        </div>
+                        <div class="small">${utils.escapeHtml(hint.hint)}</div>
+                        <div class="small muted">${hint.docs.map((doc) => utils.escapeHtml(doc.title)).join(" / ")}</div>
+                        ${
+                          hint.unreadDocs.length
+                            ? `<div class="small muted">未読文書: ${hint.unreadDocs.map(utils.escapeHtml).join(" / ")}</div>`
+                            : ""
+                        }
+                        <button
+                          class="minor-button"
+                          data-action="apply-compare-hint"
+                          data-doc-ids="${hint.ids.join("|")}"
+                          ${hint.available && !state.gameOver ? "" : "disabled"}
+                        >候補をセット</button>
+                      </div>
+                    `
+                  )
+                  .join("")}
+              </div>
+            </div>
+          `
+          : ""
+      }
       <div class="control-card">
         <label>
           <span class="small muted">左</span>
@@ -479,6 +642,10 @@
         <div class="small muted">危険語句を必要な分だけ伏字化する。やり過ぎると真実保全が下がる。</div>
       </div>
       <div class="control-card">
+        <strong>分析の観点</strong>
+        <div class="small muted">拾うべき語句: ${caseData.analysisKeywords.map(utils.escapeHtml).join(" / ")}</div>
+      </div>
+      <div class="control-card">
         <div class="inline-actions">
           ${(doc.editablePhrases || [])
             .map(
@@ -521,15 +688,17 @@
     }
     const progress = controller.getCaseProgress(caseData.id);
     const readiness = controller.getDayReadiness(caseData);
+    const checklist = controller.getApprovalChecklist(caseData);
 
     target.innerHTML = `
       <div class="control-card">
         <strong>解釈</strong>
+        <div class="small muted">何が起きているかを定義する。誤ると真実保全と後続判断に響く。</div>
         <div class="radio-list">
           ${caseData.interpretations
             .map(
               (item) => `
-                <label class="interpretation-card">
+                <label class="interpretation-card ${progress.selectedInterpretationId === item.id ? "selected" : ""}">
                   <span>
                     <input type="radio" name="interpretation" value="${item.id}" ${
                       progress.selectedInterpretationId === item.id ? "checked" : ""
@@ -545,11 +714,12 @@
       </div>
       <div class="control-card">
         <strong>対処方針</strong>
+        <div class="small muted">現場へ返す実務判断。解釈とは別に、どのコストを取るかを決める。</div>
         <div class="radio-list">
           ${caseData.decisions
             .map(
               (item) => `
-                <label class="decision-card">
+                <label class="decision-card ${progress.selectedDecisionId === item.id ? "selected" : ""}">
                   <span>
                     <input type="radio" name="decision" value="${item.id}" ${
                       progress.selectedDecisionId === item.id ? "checked" : ""
@@ -558,6 +728,23 @@
                   </span>
                   <span class="small muted">${utils.escapeHtml(item.description)}</span>
                 </label>
+              `
+            )
+            .join("")}
+        </div>
+      </div>
+      <div class="control-card">
+        <strong>承認前チェック</strong>
+        <div class="small muted">完了 ${checklist.completeCount} / ${checklist.totalCount}</div>
+        <div class="checklist-list">
+          ${checklist.items
+            .map(
+              (item) => `
+                <div class="check-item ${item.done ? "done" : ""}">
+                  <strong>${item.done ? "OK" : "要確認"}</strong>
+                  <span>${utils.escapeHtml(item.label)}</span>
+                  <div class="small muted">${utils.escapeHtml(item.detail)}</div>
+                </div>
               `
             )
             .join("")}
@@ -589,12 +776,16 @@
     target.innerHTML = state.logs
       .slice(0, 12)
       .map(
-        (entry) => `
-          <div class="log-entry">
+        (entry) => {
+          const logMeta = classifyLogEntry(entry.message);
+          return `
+          <div class="log-entry ${logMeta.tone}">
             <time>${utils.escapeHtml(entry.time)}</time>
+            <div class="small muted">${utils.escapeHtml(logMeta.label)}</div>
             <div class="small">${utils.escapeHtml(entry.message)}</div>
           </div>
-        `
+        `;
+        }
       )
       .join("");
   }
@@ -674,7 +865,24 @@
           <h2>日次報告</h2>
           <p><strong>${utils.escapeHtml(report.caseTitle)}</strong></p>
           <p>${utils.escapeHtml(report.summary)}</p>
-          ${report.lines.map((line) => `<p class="small">${utils.escapeHtml(line)}</p>`).join("")}
+          <div class="summary-grid report-grid">
+            <div class="summary-note">
+              <strong>採用した解釈</strong><br />${utils.escapeHtml(report.interpretationLabel || "記録なし")}
+            </div>
+            <div class="summary-note">
+              <strong>採用した方針</strong><br />${utils.escapeHtml(report.decisionLabel || "記録なし")}
+            </div>
+            <div class="summary-note">
+              <strong>文書確認</strong><br />${report.readCount ?? "?"} / ${report.accessibleDocCount ?? "?"}
+            </div>
+            <div class="summary-note">
+              <strong>比較照合</strong><br />${report.compareCount ?? "?"} 件
+            </div>
+          </div>
+          <div class="status-block">
+            <strong>処理要約</strong>
+            <div class="small">${report.lines.map((line) => utils.escapeHtml(line)).join("<br />")}</div>
+          </div>
           <div class="status-block">
             <strong>変動</strong>
             <div class="small">${report.delta.map(utils.escapeHtml).join("<br />")}</div>
@@ -693,6 +901,20 @@
         <div class="overlay-card">
           <h2>${utils.escapeHtml(ending.title)}</h2>
           <p>${utils.escapeHtml(ending.description)}</p>
+          ${
+            ending.assessment
+              ? `<div class="status-block"><strong>総括</strong><div class="small">${utils.escapeHtml(
+                  ending.assessment
+                )}</div></div>`
+              : ""
+          }
+          ${
+            ending.tags?.length
+              ? `<div class="inline-actions">${ending.tags
+                  .map((tag) => `<span class="tag">${utils.escapeHtml(tag)}</span>`)
+                  .join("")}</div>`
+              : ""
+          }
           <div class="ending-score">
             <div class="summary-note"><strong>収容安定度</strong><br />${state.site.containment}</div>
             <div class="summary-note"><strong>秘匿保持</strong><br />${state.site.secrecy}</div>
@@ -701,6 +923,16 @@
             <div class="summary-note"><strong>認識安定性</strong><br />${state.player.recognition}</div>
             <div class="summary-note"><strong>累計人的損失</strong><br />${state.site.casualties}</div>
           </div>
+          ${
+            ending.reasons?.length
+              ? `
+                <div class="status-block">
+                  <strong>終幕の根拠</strong>
+                  <div class="small">${ending.reasons.map(utils.escapeHtml).join("<br />")}</div>
+                </div>
+              `
+              : ""
+          }
           <div class="status-block">
             <strong>記録</strong>
             <div class="small">最終権限: CL-${state.player.clearanceLevel}<br />処理案件数: ${
@@ -725,6 +957,25 @@
         return `<p class="${className}">${utils.escapeHtml(paragraph).replace(/\n/g, "<br />")}</p>`;
       })
       .join("");
+  }
+
+  function classifyLogEntry(message) {
+    if (message.includes("最終判断")) {
+      return { label: "終幕", tone: "alert" };
+    }
+    if (message.includes("日次処理完了")) {
+      return { label: "日次報告", tone: "positive" };
+    }
+    if (message.includes("比較照合")) {
+      return { label: "比較", tone: "focus" };
+    }
+    if (message.includes("承認")) {
+      return { label: "承認", tone: "focus" };
+    }
+    if (message.includes("閲覧")) {
+      return { label: "閲覧", tone: "" };
+    }
+    return { label: "処理ログ", tone: "" };
   }
 
   window.ArchiveDriftRenderers = {

@@ -101,3 +101,38 @@
 - 2026-03-21: `node /tmp/linkedom/verify-phase1-browser.mjs` 成功 (`DEBUG_MODE_OK`, `SAVE_MIGRATION_OK`, `FULL_PLAYTHROUGH_OK`)
 - 2026-03-21: 将来版セーブ (`version: 3`) を投入して起動後に `toggle-debug` を実行しても、元セーブが保持されることを確認 (`FUTURE_SAVE_SESSION_READONLY_OK`)
 - 2026-03-21: 将来版セーブ起動後でも `new-game` 実行時は現行版セーブへ切り替わることを確認 (`FUTURE_SAVE_NEW_GAME_UNLOCK_OK`)
+
+---
+
+# Phase2 Task
+
+## Plan
+- [x] `ROADMAP.md` の Phase2 タスクを確認し、実装項目へ分解する
+- [x] チュートリアル導線と初回必読文書誘導を追加する
+- [x] 比較対象の視認性向上と比較UIの改善を行う
+- [x] 判断UIと承認前チェックの見やすさを改善する
+- [x] 日次報告 / 処理ログ / エンディング表示を改善する
+- [x] モバイル時レイアウトを最適化する
+- [x] エンディング条件の納得感を調整する
+- [x] 回帰検証を実行し、結果を記録する
+
+## Scope Notes
+- Phase1 で分割した責務構造は維持し、`renderers` と `game-engine` 中心に差分を閉じる
+- セーブ互換への影響を避けるため、初回導線の状態管理は既存 `flags` を優先利用する
+- UI 改修は静的ブラウザ構成のまま実装し、追加ビルド工程は導入しない
+
+## Progress Log
+- 2026-03-21: `ROADMAP.md` を確認。Phase2 の対象はチュートリアル導線、必読文書誘導、比較/判断UI改善、モバイル最適化、日次報告/ログ/エンディング改善、エンディング条件調整。
+- 2026-03-21: `js/game-engine.js` に必読文書、比較候補、承認前チェック、初回チュートリアル用の表示ヘルパーと操作を追加した。
+- 2026-03-21: `js/renderers.js` と `styles.css` を更新し、初回導線、比較候補カード、強化差分表示、承認前チェック、ログ分類、日次報告/終幕表示、モバイル時のカラム順最適化を実装した。
+- 2026-03-21: `js/ending-engine.js` の終幕条件を再調整し、終幕ごとの総括と判定根拠を表示できるようにした。
+
+## Verification Log
+- 2026-03-21: `node --check app.js` 成功
+- 2026-03-21: `node --check js/game-engine.js` 成功
+- 2026-03-21: `node --check js/renderers.js` 成功
+- 2026-03-21: `node --check js/ending-engine.js` 成功
+- 2026-03-21: `node scripts/validate-game-data.mjs` 成功 (`Game data validation passed.`)
+- 2026-03-21: `node /tmp/linkedom/verify-phase1-browser.mjs` 成功 (`DEBUG_MODE_OK`, `SAVE_MIGRATION_OK`, `FULL_PLAYTHROUGH_OK`)
+- 2026-03-21: Day1 起動時の DOM 検証で、初回プレイガイド / 必読文書誘導 / おすすめ比較 / 承認前チェックの表示を確認 (`PHASE2_DAY1_UI_OK`)
+- 2026-03-21: 8案件の通しプレイで、日次報告に採用解釈/方針が表示され、終幕に総括と根拠が表示されることを確認 (`PHASE2_REPORT_ENDING_OK`)

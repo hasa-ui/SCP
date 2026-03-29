@@ -4,7 +4,16 @@
 
   function createSaveManager(options = {}) {
     const saveKey = options.saveKey || "scp-archive-drift-mvp-v2";
+    const debounceMs = Number.isFinite(options.debounceMs) ? options.debounceMs : 260;
     let storageWarningReason = "";
+    let pendingTimer = null;
+    let pendingState = null;
+    let pendingSaveOptions = null;
+    const metrics = {
+      pending: false,
+      lastSaveMs: 0,
+      saveCount: 0,
+    };
 
     function createInitialState(gameData, initOptions = {}) {
       const warningReason = initOptions.warningReason || storageWarningReason || "";
@@ -177,8 +186,10 @@
     }
 
     function saveState(state, saveOptions = {}) {
+      clearPendingSave();
       const initialWarningReason = state.storageWarningReason || "";
       const shouldPreserveWarning = saveOptions.preserveWarning && Boolean(initialWarningReason);
+      const startTime = Date.now();
 
       if (!shouldPreserveWarning) {
         clearStorageWarning(state);
@@ -188,11 +199,14 @@
         const payload = buildSavePayload(state, shouldPreserveWarning);
         localStorage.setItem(saveKey, JSON.stringify(payload));
         state.saveMeta = payload.saveMeta;
+        metrics.lastSaveMs = Date.now() - startTime;
+        metrics.saveCount += 1;
         if (!shouldPreserveWarning) {
           clearStorageWarning(state);
         }
         return { success: true, warningReason: state.storageWarningReason || "" };
       } catch (error) {
+        metrics.lastSaveMs = Date.now() - startTime;
         if (!shouldPreserveWarning || initialWarningReason === "corrupted") {
           setStorageWarning(state, "write-failed");
         }
@@ -200,7 +214,50 @@
       }
     }
 
+    function requestSave(state, saveOptions = {}) {
+      if (saveOptions.immediate) {
+        return saveState(state, saveOptions);
+      }
+
+      pendingState = state;
+      pendingSaveOptions = {
+        ...saveOptions,
+        immediate: false,
+      };
+      metrics.pending = true;
+
+      if (pendingTimer) {
+        clearTimeout(pendingTimer);
+      }
+
+      pendingTimer = setTimeout(() => {
+        flushPendingSave();
+      }, debounceMs);
+
+      return {
+        success: true,
+        pending: true,
+        warningReason: state.storageWarningReason || "",
+      };
+    }
+
+    function flushPendingSave() {
+      if (!pendingState) {
+        clearPendingSave();
+        return { success: true, pending: false, warningReason: "" };
+      }
+
+      const state = pendingState;
+      const saveOptions = pendingSaveOptions || {};
+      clearPendingSave();
+      return saveState(state, {
+        ...saveOptions,
+        immediate: false,
+      });
+    }
+
     function clearSavedState(state) {
+      clearPendingSave();
       try {
         localStorage.removeItem(saveKey);
         clearStorageWarning(state);
@@ -209,6 +266,16 @@
         setStorageWarning(state, "unavailable");
         return { success: false, warningReason: state.storageWarningReason || "" };
       }
+    }
+
+    function clearPendingSave() {
+      if (pendingTimer) {
+        clearTimeout(pendingTimer);
+      }
+      pendingTimer = null;
+      pendingState = null;
+      pendingSaveOptions = null;
+      metrics.pending = false;
     }
 
     function setStorageWarning(state, reason) {
@@ -255,14 +322,25 @@
       return "この環境ではローカル保存を利用できません。進行は現在のタブ内でのみ保持されます。";
     }
 
+    function getMetrics() {
+      return {
+        pending: metrics.pending,
+        lastSaveMs: metrics.lastSaveMs,
+        saveCount: metrics.saveCount,
+      };
+    }
+
     return {
       saveKey,
       currentVersion: dataTools.CURRENT_SAVE_VERSION,
       createInitialState,
       loadState,
       saveState,
+      requestSave,
+      flushPendingSave,
       clearSavedState,
       getStorageWarningMessage,
+      getMetrics,
     };
   }
 

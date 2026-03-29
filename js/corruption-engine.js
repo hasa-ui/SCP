@@ -1,7 +1,31 @@
 (function () {
   const utils = window.ArchiveDriftUtils;
+  const presentedTextCache = new Map();
+  const diffRowsCache = new Map();
+  const cacheStats = {
+    presentedTextHits: 0,
+    presentedTextMisses: 0,
+    diffHits: 0,
+    diffMisses: 0,
+  };
 
   function getPresentedText(doc, redactions, state, mode) {
+    const cacheKey = [
+      doc.id,
+      mode,
+      state.player.dayCount,
+      bucketize(state.player.contamination, 10),
+      bucketize(state.player.recognition, 10),
+      bucketize(state.player.memory, 10),
+      [...(redactions || [])].sort().join("||"),
+    ].join("::");
+
+    if (presentedTextCache.has(cacheKey)) {
+      cacheStats.presentedTextHits += 1;
+      return presentedTextCache.get(cacheKey);
+    }
+
+    cacheStats.presentedTextMisses += 1;
     let text = doc.body;
 
     redactions.forEach((phrase) => {
@@ -48,10 +72,24 @@
       text += "\n[比較注記欠損]";
     }
 
+    setBoundedCacheEntry(presentedTextCache, cacheKey, text, 120);
     return text;
   }
 
   function buildDiffRows(leftText, rightText) {
+    const cacheKey = [
+      utils.hashString(leftText),
+      leftText.length,
+      utils.hashString(rightText),
+      rightText.length,
+    ].join("::");
+
+    if (diffRowsCache.has(cacheKey)) {
+      cacheStats.diffHits += 1;
+      return diffRowsCache.get(cacheKey);
+    }
+
+    cacheStats.diffMisses += 1;
     const left = leftText.split("\n").filter(Boolean);
     const right = rightText.split("\n").filter(Boolean);
     const dp = Array.from({ length: left.length + 1 }, () =>
@@ -95,6 +133,7 @@
       j += 1;
     }
 
+    setBoundedCacheEntry(diffRowsCache, cacheKey, rows, 48);
     return rows;
   }
 
@@ -112,9 +151,33 @@
     return warnings;
   }
 
+  function getCacheStats() {
+    return {
+      presentedTextHits: cacheStats.presentedTextHits,
+      presentedTextMisses: cacheStats.presentedTextMisses,
+      diffHits: cacheStats.diffHits,
+      diffMisses: cacheStats.diffMisses,
+      presentedTextEntries: presentedTextCache.size,
+      diffEntries: diffRowsCache.size,
+    };
+  }
+
+  function setBoundedCacheEntry(target, key, value, maxEntries) {
+    target.set(key, value);
+    if (target.size > maxEntries) {
+      const firstKey = target.keys().next().value;
+      target.delete(firstKey);
+    }
+  }
+
+  function bucketize(value, size) {
+    return Math.floor(Number(value || 0) / size);
+  }
+
   window.ArchiveDriftCorruptionEngine = {
     getPresentedText,
     buildDiffRows,
     getReaderWarnings,
+    getCacheStats,
   };
 })();

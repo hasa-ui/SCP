@@ -6,6 +6,9 @@
     let state = null;
     let preserveInitialStorageWarning = false;
     let saveReadOnlySession = false;
+    const runtimeMetrics = {
+      lastRenderMs: 0,
+    };
 
     function init() {
       const loaded = saveManager.loadState(gameData);
@@ -60,30 +63,12 @@
     }
 
     function getAccessibleDocuments(caseData) {
-      return caseData.documents.filter((doc) => getDocumentAccess(caseData, doc).available);
+      return buildDocumentContext(caseData).accessibleDocs;
     }
 
     function getDayReadiness(caseData) {
-      const progress = getCaseProgress(caseData.id);
-      const accessibleDocs = getAccessibleDocuments(caseData);
-      const unread = accessibleDocs.filter((doc) => !progress.readDocs.includes(doc.id));
-
-      if (!progress.selectedInterpretationId || !progress.selectedDecisionId) {
-        return { ready: false, message: "解釈と対処方針を選択する必要がある。" };
-      }
-
-      if (!progress.approved) {
-        return { ready: false, message: "判断を承認してから日次処理へ進む。" };
-      }
-
-      if (unread.length > 0) {
-        return {
-          ready: false,
-          message: `未読文書あり: ${unread.map((doc) => doc.title).join(" / ")}`,
-        };
-      }
-
-      return { ready: true, message: "日次処理を実行可能。" };
+      const { progress, accessibleDocs } = buildDocumentContext(caseData);
+      return computeDayReadiness(progress, accessibleDocs);
     }
 
     function getStorageWarningMessage() {
@@ -94,45 +79,16 @@
       if (!caseData) {
         return [];
       }
-      const progress = getCaseProgress(caseData.id);
-      const fallbackIds = (caseData.documents || []).slice(0, 2).map((doc) => doc.id);
-      const mustReadIds = caseData.compareHints[0]?.ids?.length ? caseData.compareHints[0].ids : fallbackIds;
-      return mustReadIds
-        .map((docId) => caseData.documents.find((doc) => doc.id === docId))
-        .filter(Boolean)
-        .map((doc) => {
-          const access = getDocumentAccess(caseData, doc);
-          return {
-            id: doc.id,
-            title: doc.title,
-            available: access.available,
-            reason: access.reason,
-            read: progress.readDocs.includes(doc.id),
-          };
-        });
+      const { progress, documentAccessById } = buildDocumentContext(caseData);
+      return computeMustReadDocs(caseData, progress, documentAccessById);
     }
 
     function getRecommendedCompareHints(caseData) {
       if (!caseData) {
         return [];
       }
-      const progress = getCaseProgress(caseData.id);
-      return (caseData.compareHints || []).map((hint, index) => {
-        const docs = hint.ids
-          .map((docId) => caseData.documents.find((doc) => doc.id === docId))
-          .filter(Boolean);
-        const available = docs.length === 2 && docs.every((doc) => getDocumentAccess(caseData, doc).available);
-        return {
-          key: `${caseData.id}:${index}`,
-          ids: [...hint.ids],
-          label: hint.label,
-          hint: hint.hint,
-          docs: docs.map((doc) => ({ id: doc.id, title: doc.title })),
-          available,
-          viewed: progress.comparePairsViewed.includes(utils.pairKey(hint.ids)),
-          unreadDocs: docs.filter((doc) => !progress.readDocs.includes(doc.id)).map((doc) => doc.title),
-        };
-      });
+      const { progress, documentAccessById } = buildDocumentContext(caseData);
+      return computeRecommendedCompareHints(caseData, progress, documentAccessById);
     }
 
     function getApprovalChecklist(caseData) {
@@ -144,69 +100,10 @@
           items: [],
         };
       }
-      const progress = getCaseProgress(caseData.id);
-      const accessibleDocs = getAccessibleDocuments(caseData);
-      const unreadDocs = accessibleDocs.filter((doc) => !progress.readDocs.includes(doc.id));
-      const memoPresent = Object.values(progress.annotationByDoc).some((value) => String(value || "").trim());
-      const compareDone = progress.comparePairsViewed.length > 0;
-      const mustReadPending = getMustReadDocs(caseData).filter((doc) => doc.available && !doc.read);
-      const items = [
-        {
-          id: "read-docs",
-          label: "閲覧可能な文書を確認する",
-          done: unreadDocs.length === 0,
-          detail:
-            unreadDocs.length === 0
-              ? "未読文書なし"
-              : `未読: ${unreadDocs.map((doc) => doc.title).join(" / ")}`,
-        },
-        {
-          id: "must-read",
-          label: "必読文書を押さえる",
-          done: mustReadPending.length === 0,
-          detail:
-            mustReadPending.length === 0
-              ? "初回導線の必読文書を確認済み"
-              : `残り: ${mustReadPending.map((doc) => doc.title).join(" / ")}`,
-        },
-        {
-          id: "compare",
-          label: "比較照合を行う",
-          done: compareDone,
-          detail: compareDone ? "比較履歴あり" : "推奨比較を 1 件以上確認すると精度が上がる",
-        },
-        {
-          id: "interpretation",
-          label: "解釈を選ぶ",
-          done: Boolean(progress.selectedInterpretationId),
-          detail: progress.selectedInterpretationId ? "選択済み" : "何が起きているかを選ぶ",
-        },
-        {
-          id: "decision",
-          label: "対処方針を選ぶ",
-          done: Boolean(progress.selectedDecisionId),
-          detail: progress.selectedDecisionId ? "選択済み" : "何を実行するかを選ぶ",
-        },
-        {
-          id: "memo",
-          label: "引き継ぎメモを残す",
-          done: memoPresent,
-          detail: memoPresent ? "分析メモあり" : "核心語を含む短いメモが推奨",
-        },
-        {
-          id: "approval",
-          label: "判断を承認する",
-          done: progress.approved,
-          detail: progress.approved ? "承認済み" : "内容が固まったら承認",
-        },
-      ];
-
-      return {
-        ready: unreadDocs.length === 0 && progress.approved,
-        completeCount: items.filter((item) => item.done).length,
-        totalCount: items.length,
-        items,
-      };
+      const { progress, accessibleDocs, documentAccessById } = buildDocumentContext(caseData);
+      const mustReadDocs = computeMustReadDocs(caseData, progress, documentAccessById);
+      const compareHints = computeRecommendedCompareHints(caseData, progress, documentAccessById);
+      return computeApprovalChecklist(caseData, progress, accessibleDocs, mustReadDocs, compareHints);
     }
 
     function getTutorialState() {
@@ -219,41 +116,15 @@
           compareHints: [],
         };
       }
-      const mustReadDocs = getMustReadDocs(caseData);
-      const compareHints = getRecommendedCompareHints(caseData);
-      const progress = getCaseProgress(caseData.id);
-      const visible =
-        state.currentCaseIndex === 0 &&
-        state.completedCaseIds.length === 0 &&
-        !state.flags.includes("tutorialDismissed");
-
-      return {
-        visible,
-        mustReadDocs,
-        compareHints,
-        steps: [
-          {
-            label: "必読文書を読む",
-            done: mustReadDocs.filter((doc) => doc.available).every((doc) => doc.read),
-          },
-          {
-            label: "推奨比較を確認する",
-            done: compareHints.some((hint) => hint.viewed),
-          },
-          {
-            label: "解釈と対処方針を選ぶ",
-            done: Boolean(progress.selectedInterpretationId && progress.selectedDecisionId),
-          },
-          {
-            label: "承認して日次処理へ進む",
-            done: progress.approved,
-          },
-        ],
-      };
+      const { progress, documentAccessById } = buildDocumentContext(caseData);
+      const mustReadDocs = computeMustReadDocs(caseData, progress, documentAccessById);
+      const compareHints = computeRecommendedCompareHints(caseData, progress, documentAccessById);
+      return computeTutorialState(caseData, progress, mustReadDocs, compareHints);
     }
 
     function buildDebugSnapshot(validationReport) {
       const currentCase = getCurrentCase();
+      const saveMetrics = saveManager.getMetrics();
       return {
         saveVersion: state.saveMeta?.version || state.version,
         migratedFrom: state.saveMeta?.migratedFrom || null,
@@ -267,7 +138,15 @@
         validationErrors: validationReport.errors.length,
         validationWarnings: validationReport.warnings.length,
         storageWarningReason: state.storageWarningReason || "",
+        lastRenderMs: runtimeMetrics.lastRenderMs,
+        lastSaveMs: saveMetrics.lastSaveMs,
+        pendingSave: saveMetrics.pending,
+        saveCount: saveMetrics.saveCount,
       };
+    }
+
+    function recordRenderDuration(value) {
+      runtimeMetrics.lastRenderMs = Math.round(value * 100) / 100;
     }
 
     function startNewGame() {
@@ -276,7 +155,7 @@
       });
       preserveInitialStorageWarning = false;
       saveReadOnlySession = false;
-      persist();
+      persist({ immediate: true });
     }
 
     function resetSave() {
@@ -286,7 +165,7 @@
       });
       preserveInitialStorageWarning = false;
       saveReadOnlySession = false;
-      persist();
+      persist({ immediate: true });
     }
 
     function toggleDebugMode() {
@@ -357,7 +236,7 @@
 
     function recordAnnotationCheckpoint() {
       logAction("注釈を記録した。");
-      persist();
+      persist({ immediate: true });
     }
 
     function openDocument(docId) {
@@ -457,7 +336,7 @@
       }
       progress.approved = true;
       logAction(`案件「${caseData.title}」の判断を承認した。`);
-      persist();
+      persist({ immediate: true });
     }
 
     function endCurrentDay() {
@@ -497,7 +376,7 @@
         logAction(`日次処理完了: ${caseData.title}`);
       }
 
-      persist();
+      persist({ immediate: true });
     }
 
     function dismissOverlay() {
@@ -517,13 +396,13 @@
           compareIds: ["", ""],
         };
         logAction(`新規案件受領: ${nextCase.title}`);
-        persist();
+        persist({ immediate: true });
         return;
       }
 
       if (state.overlay.type === "ending") {
         state.overlay = null;
-        persist();
+        persist({ immediate: true });
       }
     }
 
@@ -542,7 +421,7 @@
       if (!Array.isArray(state.currentView.compareIds) || state.currentView.compareIds.length !== 2) {
         state.currentView.compareIds = ["", ""];
       }
-      persist();
+      persist({ immediate: true });
     }
 
     function resolveCaseOutcome(caseData, progress) {
@@ -757,13 +636,221 @@
       state.logs = state.logs.slice(0, 12);
     }
 
-    function persist() {
+    function persist(saveOptions = {}) {
       if (saveReadOnlySession) {
         return;
       }
-      saveManager.saveState(state, {
+      saveManager.requestSave(state, {
         preserveWarning: preserveInitialStorageWarning,
+        immediate: Boolean(saveOptions.immediate),
       });
+    }
+
+    function flushPendingState() {
+      if (saveReadOnlySession) {
+        return;
+      }
+      saveManager.flushPendingSave();
+    }
+
+    function buildRenderModel(validationReport) {
+      const caseData = getCurrentCase();
+      const context = caseData
+        ? buildDocumentContext(caseData)
+        : { progress: null, documentAccessById: {}, accessibleDocs: [] };
+      const mustReadDocs = caseData
+        ? computeMustReadDocs(caseData, context.progress, context.documentAccessById)
+        : [];
+      const compareHints = caseData
+        ? computeRecommendedCompareHints(caseData, context.progress, context.documentAccessById)
+        : [];
+      const readiness = caseData ? computeDayReadiness(context.progress, context.accessibleDocs) : { ready: false, message: "" };
+      const checklist = caseData
+        ? computeApprovalChecklist(caseData, context.progress, context.accessibleDocs, mustReadDocs, compareHints)
+        : { items: [], completeCount: 0, totalCount: 0 };
+      const tutorial = caseData
+        ? computeTutorialState(caseData, context.progress, mustReadDocs, compareHints)
+        : { visible: false, steps: [] };
+      const currentDoc = caseData
+        ? caseData.documents.find((item) => item.id === state.currentView.currentDocId) || null
+        : null;
+      const debugSnapshot = buildDebugSnapshot(validationReport);
+
+      return {
+        state,
+        caseData,
+        progress: context.progress,
+        documentAccessById: context.documentAccessById,
+        accessibleDocs: context.accessibleDocs,
+        mustReadDocs,
+        compareHints,
+        readiness,
+        checklist,
+        tutorial,
+        currentDoc,
+        debugSnapshot,
+      };
+    }
+
+    function buildDocumentContext(caseData) {
+      const progress = getCaseProgress(caseData.id);
+      const documentAccessById = Object.fromEntries(
+        caseData.documents.map((doc) => [doc.id, getDocumentAccess(caseData, doc)])
+      );
+      const accessibleDocs = caseData.documents.filter((doc) => documentAccessById[doc.id]?.available);
+      return {
+        progress,
+        documentAccessById,
+        accessibleDocs,
+      };
+    }
+
+    function computeDayReadiness(progress, accessibleDocs) {
+      const unread = accessibleDocs.filter((doc) => !progress.readDocs.includes(doc.id));
+
+      if (!progress.selectedInterpretationId || !progress.selectedDecisionId) {
+        return { ready: false, message: "解釈と対処方針を選択する必要がある。" };
+      }
+
+      if (!progress.approved) {
+        return { ready: false, message: "判断を承認してから日次処理へ進む。" };
+      }
+
+      if (unread.length > 0) {
+        return {
+          ready: false,
+          message: `未読文書あり: ${unread.map((doc) => doc.title).join(" / ")}`,
+        };
+      }
+
+      return { ready: true, message: "日次処理を実行可能。" };
+    }
+
+    function computeMustReadDocs(caseData, progress, documentAccessById) {
+      const fallbackIds = (caseData.documents || []).slice(0, 2).map((doc) => doc.id);
+      const mustReadIds = caseData.compareHints[0]?.ids?.length ? caseData.compareHints[0].ids : fallbackIds;
+      return mustReadIds
+        .map((docId) => caseData.documents.find((doc) => doc.id === docId))
+        .filter(Boolean)
+        .map((doc) => ({
+          id: doc.id,
+          title: doc.title,
+          available: documentAccessById[doc.id]?.available || false,
+          reason: documentAccessById[doc.id]?.reason || "",
+          read: progress.readDocs.includes(doc.id),
+        }));
+    }
+
+    function computeRecommendedCompareHints(caseData, progress, documentAccessById) {
+      return (caseData.compareHints || []).map((hint, index) => {
+        const docs = hint.ids
+          .map((docId) => caseData.documents.find((doc) => doc.id === docId))
+          .filter(Boolean);
+        const available = docs.length === 2 && docs.every((doc) => documentAccessById[doc.id]?.available);
+        return {
+          key: `${caseData.id}:${index}`,
+          ids: [...hint.ids],
+          label: hint.label,
+          hint: hint.hint,
+          docs: docs.map((doc) => ({ id: doc.id, title: doc.title })),
+          available,
+          viewed: progress.comparePairsViewed.includes(utils.pairKey(hint.ids)),
+          unreadDocs: docs.filter((doc) => !progress.readDocs.includes(doc.id)).map((doc) => doc.title),
+        };
+      });
+    }
+
+    function computeApprovalChecklist(caseData, progress, accessibleDocs, mustReadDocs, compareHints) {
+      const unreadDocs = accessibleDocs.filter((doc) => !progress.readDocs.includes(doc.id));
+      const memoPresent = Object.values(progress.annotationByDoc).some((value) => String(value || "").trim());
+      const compareDone = compareHints.some((hint) => hint.viewed);
+      const mustReadPending = mustReadDocs.filter((doc) => doc.available && !doc.read);
+      const items = [
+        {
+          id: "read-docs",
+          label: "閲覧可能な文書を確認する",
+          done: unreadDocs.length === 0,
+          detail:
+            unreadDocs.length === 0
+              ? "未読文書なし"
+              : `未読: ${unreadDocs.map((doc) => doc.title).join(" / ")}`,
+        },
+        {
+          id: "must-read",
+          label: "必読文書を押さえる",
+          done: mustReadPending.length === 0,
+          detail:
+            mustReadPending.length === 0
+              ? "初回導線の必読文書を確認済み"
+              : `残り: ${mustReadPending.map((doc) => doc.title).join(" / ")}`,
+        },
+        {
+          id: "compare",
+          label: "比較照合を行う",
+          done: compareDone,
+          detail: compareDone ? "比較履歴あり" : "推奨比較を 1 件以上確認すると精度が上がる",
+        },
+        {
+          id: "interpretation",
+          label: "解釈を選ぶ",
+          done: Boolean(progress.selectedInterpretationId),
+          detail: progress.selectedInterpretationId ? "選択済み" : "何が起きているかを選ぶ",
+        },
+        {
+          id: "decision",
+          label: "対処方針を選ぶ",
+          done: Boolean(progress.selectedDecisionId),
+          detail: progress.selectedDecisionId ? "選択済み" : "何を実行するかを選ぶ",
+        },
+        {
+          id: "memo",
+          label: "引き継ぎメモを残す",
+          done: memoPresent,
+          detail: memoPresent ? "分析メモあり" : "核心語を含む短いメモが推奨",
+        },
+        {
+          id: "approval",
+          label: "判断を承認する",
+          done: progress.approved,
+          detail: progress.approved ? "承認済み" : "内容が固まったら承認",
+        },
+      ];
+
+      return {
+        ready: unreadDocs.length === 0 && progress.approved,
+        completeCount: items.filter((item) => item.done).length,
+        totalCount: items.length,
+        items,
+      };
+    }
+
+    function computeTutorialState(caseData, progress, mustReadDocs, compareHints) {
+      return {
+        visible:
+          state.currentCaseIndex === 0 &&
+          state.completedCaseIds.length === 0 &&
+          !state.flags.includes("tutorialDismissed"),
+        mustReadDocs,
+        compareHints,
+        steps: [
+          {
+            label: "必読文書を読む",
+            done: mustReadDocs.filter((doc) => doc.available).every((doc) => doc.read),
+          },
+          {
+            label: "推奨比較を確認する",
+            done: compareHints.some((hint) => hint.viewed),
+          },
+          {
+            label: "解釈と対処方針を選ぶ",
+            done: Boolean(progress.selectedInterpretationId && progress.selectedDecisionId),
+          },
+          {
+            label: "承認して日次処理へ進む",
+            done: progress.approved,
+          },
+        ],
+      };
     }
 
     return {
@@ -782,6 +869,9 @@
       getApprovalChecklist,
       getTutorialState,
       buildDebugSnapshot,
+      buildRenderModel,
+      recordRenderDuration,
+      flushPendingState,
       startNewGame,
       resetSave,
       toggleDebugMode,

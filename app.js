@@ -38,12 +38,18 @@
 
   function bindEvents(controller, validationReport) {
     const render = () => {
+      const renderStart = Date.now();
       window.ArchiveDriftRenderers.renderApplication({
         controller,
         corruptionEngine: window.ArchiveDriftCorruptionEngine,
         validationReport,
       });
+      controller.recordRenderDuration(Date.now() - renderStart);
     };
+
+    window.addEventListener("beforeunload", () => {
+      controller.flushPendingState();
+    });
 
     document.addEventListener("click", (event) => {
       const actionNode = event.target.closest("[data-action]");

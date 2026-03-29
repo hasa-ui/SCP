@@ -3,17 +3,18 @@
 
   function renderApplication(options) {
     const { controller, corruptionEngine, validationReport } = options;
-    renderDaySummary(controller, validationReport);
-    renderStats(controller);
-    renderCases(controller);
-    renderDocuments(controller);
-    renderReader(controller, corruptionEngine);
-    renderCaseSummary(controller);
-    renderCompareControls(controller);
-    renderEditControls(controller);
-    renderDecisionControls(controller);
-    renderActivityLog(controller);
-    renderDebugPanel(controller, validationReport);
+    const renderModel = controller.buildRenderModel(validationReport);
+    renderDaySummary(controller, renderModel, validationReport);
+    renderStats(renderModel);
+    renderCases(controller, renderModel);
+    renderDocuments(renderModel);
+    renderReader(renderModel, corruptionEngine);
+    renderCaseSummary(renderModel);
+    renderCompareControls(renderModel);
+    renderEditControls(renderModel);
+    renderDecisionControls(renderModel);
+    renderActivityLog(renderModel);
+    renderDebugPanel(renderModel, validationReport, corruptionEngine);
     renderOverlay(controller);
   }
 
@@ -39,18 +40,15 @@
     `;
   }
 
-  function renderDaySummary(controller, validationReport) {
+  function renderDaySummary(controller, renderModel, validationReport) {
     const target = document.getElementById("day-summary");
-    const state = controller.getState();
-    const caseData = controller.getCurrentCase();
+    const { state, caseData, tutorial, mustReadDocs } = renderModel;
     if (!caseData) {
       target.innerHTML = "";
       return;
     }
 
     const report = state.reports[state.reports.length - 1];
-    const tutorial = controller.getTutorialState();
-    const mustReadDocs = controller.getMustReadDocs(caseData);
     target.innerHTML = `
       <div class="summary-grid">
         <div>
@@ -136,10 +134,10 @@
     `;
   }
 
-  function renderStats(controller) {
+  function renderStats(renderModel) {
     const playerTarget = document.getElementById("player-stats");
     const siteTarget = document.getElementById("site-stats");
-    const state = controller.getState();
+    const { state } = renderModel;
 
     const playerStats = {
       recognition: "認識安定性",
@@ -187,9 +185,9 @@
     `;
   }
 
-  function renderCases(controller) {
+  function renderCases(controller, renderModel) {
     const target = document.getElementById("case-list");
-    const state = controller.getState();
+    const { state } = renderModel;
     target.innerHTML = controller
       .getGameData()
       .cases.map((caseData, index) => {
@@ -221,25 +219,18 @@
       .join("");
   }
 
-  function renderDocuments(controller) {
+  function renderDocuments(renderModel) {
     const target = document.getElementById("document-list");
-    const state = controller.getState();
-    const caseData = controller.getCurrentCase();
+    const { state, caseData, progress, mustReadDocs, compareHints } = renderModel;
     if (!caseData) {
       target.innerHTML = "";
       return;
     }
-
-    const progress = controller.getCaseProgress(caseData.id);
-    const mustReadIds = new Set(controller.getMustReadDocs(caseData).map((doc) => doc.id));
-    const compareRecommendedIds = new Set(
-      controller
-        .getRecommendedCompareHints(caseData)
-        .flatMap((hint) => (hint.available || hint.viewed ? hint.ids : []))
-    );
+    const mustReadIds = new Set(mustReadDocs.map((doc) => doc.id));
+    const compareRecommendedIds = new Set(compareHints.flatMap((hint) => (hint.available || hint.viewed ? hint.ids : [])));
     target.innerHTML = caseData.documents
       .map((doc) => {
-        const access = controller.getDocumentAccess(caseData, doc);
+        const access = renderModel.documentAccessById[doc.id];
         const isActive = state.currentView.currentDocId === doc.id && state.currentView.mode === "document";
         const isRead = progress.readDocs.includes(doc.id);
         const isMustRead = mustReadIds.has(doc.id);
@@ -276,9 +267,8 @@
       .join("");
   }
 
-  function renderReader(controller, corruptionEngine) {
-    const state = controller.getState();
-    const caseData = controller.getCurrentCase();
+  function renderReader(renderModel, corruptionEngine) {
+    const { state, caseData, progress, currentDoc, mustReadDocs, compareHints } = renderModel;
     const header = document.getElementById("reader-header");
     const content = document.getElementById("reader-content");
 
@@ -289,28 +279,25 @@
     }
 
     if (state.currentView.mode === "compare") {
-      const compareHtml = renderCompareView(controller, corruptionEngine);
+      const compareHtml = renderCompareView(renderModel, corruptionEngine);
       header.innerHTML = compareHtml.header;
       content.innerHTML = compareHtml.content;
       return;
     }
 
-    const doc = caseData.documents.find((item) => item.id === state.currentView.currentDocId);
+    const doc = currentDoc;
     if (!doc) {
       header.innerHTML = "";
       content.innerHTML = `<div class="warning-block">閲覧可能な文書がありません。</div>`;
       return;
     }
 
-    const progress = controller.getCaseProgress(caseData.id);
     const redacted = progress.redactions[doc.id] || [];
     const presentedText = corruptionEngine.getPresentedText(doc, redacted, state, "reader");
     const annotation = progress.annotationByDoc[doc.id] || "";
     const warnings = corruptionEngine.getReaderWarnings(doc, state);
-    const mustReadIds = new Set(controller.getMustReadDocs(caseData).map((item) => item.id));
-    const relatedHints = controller
-      .getRecommendedCompareHints(caseData)
-      .filter((hint) => hint.ids.includes(doc.id));
+    const mustReadIds = new Set(mustReadDocs.map((item) => item.id));
+    const relatedHints = compareHints.filter((hint) => hint.ids.includes(doc.id));
 
     header.innerHTML = `
       <div class="reader-header-top">
@@ -373,9 +360,8 @@
     `;
   }
 
-  function renderCompareView(controller, corruptionEngine) {
-    const state = controller.getState();
-    const caseData = controller.getCurrentCase();
+  function renderCompareView(renderModel, corruptionEngine) {
+    const { state, caseData, progress, compareHints } = renderModel;
     const [leftId, rightId] = state.currentView.compareIds;
     const leftDoc = caseData.documents.find((doc) => doc.id === leftId);
     const rightDoc = caseData.documents.find((doc) => doc.id === rightId);
@@ -386,7 +372,6 @@
       };
     }
 
-    const progress = controller.getCaseProgress(caseData.id);
     const leftText = corruptionEngine.getPresentedText(leftDoc, progress.redactions[leftId] || [], state, "compare");
     const rightText = corruptionEngine.getPresentedText(
       rightDoc,
@@ -397,9 +382,7 @@
     const rows = corruptionEngine.buildDiffRows(leftText, rightText);
     const changedCount = rows.filter((row) => row.changed).length;
     const unchangedCount = rows.length - changedCount;
-    const matchingHint = controller
-      .getRecommendedCompareHints(caseData)
-      .find((hint) => utils.pairKey(hint.ids) === utils.pairKey([leftId, rightId]));
+    const matchingHint = compareHints.find((hint) => utils.pairKey(hint.ids) === utils.pairKey([leftId, rightId]));
 
     return {
       header: `
@@ -463,17 +446,13 @@
     };
   }
 
-  function renderCaseSummary(controller) {
+  function renderCaseSummary(renderModel) {
     const target = document.getElementById("case-summary");
-    const state = controller.getState();
-    const caseData = controller.getCurrentCase();
+    const { state, caseData, readiness, compareHints, mustReadDocs } = renderModel;
     if (!caseData) {
       target.innerHTML = "";
       return;
     }
-    const readiness = controller.getDayReadiness(caseData);
-    const compareHints = controller.getRecommendedCompareHints(caseData);
-    const mustReadDocs = controller.getMustReadDocs(caseData);
     const notes = (caseData.continuityNotes || [])
       .filter((note) => state.flags.includes(note.flag))
       .map((note) => `<div class="summary-note small">${utils.escapeHtml(note.text)}</div>`)
@@ -529,17 +508,15 @@
     `;
   }
 
-  function renderCompareControls(controller) {
+  function renderCompareControls(renderModel) {
     const target = document.getElementById("compare-controls");
-    const state = controller.getState();
-    const caseData = controller.getCurrentCase();
+    const { state, caseData, accessibleDocs, compareHints } = renderModel;
     if (!caseData) {
       target.innerHTML = "";
       return;
     }
-    const accessibleDocs = controller.getAccessibleDocuments(caseData);
     const [leftId, rightId] = state.currentView.compareIds;
-    const recommendations = controller.getRecommendedCompareHints(caseData);
+    const recommendations = compareHints;
 
     target.innerHTML = `
       ${
@@ -619,20 +596,18 @@
     `;
   }
 
-  function renderEditControls(controller) {
+  function renderEditControls(renderModel) {
     const target = document.getElementById("edit-controls");
-    const state = controller.getState();
-    const caseData = controller.getCurrentCase();
+    const { state, caseData, currentDoc, progress, documentAccessById } = renderModel;
     if (!caseData) {
       target.innerHTML = "";
       return;
     }
-    const doc = caseData.documents.find((item) => item.id === state.currentView.currentDocId);
-    if (!doc || !controller.getDocumentAccess(caseData, doc).available) {
+    const doc = currentDoc;
+    if (!doc || !documentAccessById[doc.id]?.available) {
       target.innerHTML = `<div class="control-card small">編集対象の文書を開いてください。</div>`;
       return;
     }
-    const progress = controller.getCaseProgress(caseData.id);
     const redactions = progress.redactions[doc.id] || [];
     const annotation = progress.annotationByDoc[doc.id] || "";
 
@@ -678,17 +653,13 @@
     `;
   }
 
-  function renderDecisionControls(controller) {
+  function renderDecisionControls(renderModel) {
     const target = document.getElementById("decision-controls");
-    const state = controller.getState();
-    const caseData = controller.getCurrentCase();
+    const { state, caseData, progress, readiness, checklist } = renderModel;
     if (!caseData) {
       target.innerHTML = "";
       return;
     }
-    const progress = controller.getCaseProgress(caseData.id);
-    const readiness = controller.getDayReadiness(caseData);
-    const checklist = controller.getApprovalChecklist(caseData);
 
     target.innerHTML = `
       <div class="control-card">
@@ -770,9 +741,9 @@
     `;
   }
 
-  function renderActivityLog(controller) {
+  function renderActivityLog(renderModel) {
     const target = document.getElementById("activity-log");
-    const state = controller.getState();
+    const { state } = renderModel;
     target.innerHTML = state.logs
       .slice(0, 12)
       .map(
@@ -790,13 +761,13 @@
       .join("");
   }
 
-  function renderDebugPanel(controller, validationReport) {
+  function renderDebugPanel(renderModel, validationReport, corruptionEngine) {
     const target = document.getElementById("debug-panel");
     if (!target) {
       return;
     }
-    const state = controller.getState();
-    const snapshot = controller.buildDebugSnapshot(validationReport);
+    const { state, debugSnapshot: snapshot } = renderModel;
+    const cacheStats = corruptionEngine.getCacheStats();
 
     if (!state.debug.enabled) {
       target.innerHTML = `
@@ -815,7 +786,19 @@
           save v${snapshot.saveVersion}<br />
           current case: ${utils.escapeHtml(snapshot.currentCaseId || "-")}<br />
           day: ${snapshot.currentDay}<br />
-          storage warning: ${utils.escapeHtml(snapshot.storageWarningReason || "none")}
+          storage warning: ${utils.escapeHtml(snapshot.storageWarningReason || "none")}<br />
+          render: ${snapshot.lastRenderMs} ms<br />
+          save: ${snapshot.lastSaveMs} ms<br />
+          pending save: ${snapshot.pendingSave ? "yes" : "no"}
+        </div>
+      </div>
+      <div class="control-card">
+        <strong>Caches</strong>
+        <div class="small mono">
+          presented hit/miss: ${cacheStats.presentedTextHits}/${cacheStats.presentedTextMisses}<br />
+          diff hit/miss: ${cacheStats.diffHits}/${cacheStats.diffMisses}<br />
+          entries: text ${cacheStats.presentedTextEntries} / diff ${cacheStats.diffEntries}<br />
+          save count: ${snapshot.saveCount}
         </div>
       </div>
       <div class="control-card">

@@ -25,18 +25,6 @@
       saveManager,
       endingEngine: window.ArchiveDriftEndingEngine,
     });
-
-    controller.init();
-    bindEvents(controller, validationReport);
-    renderers.renderApplication({
-      controller,
-      corruptionEngine: window.ArchiveDriftCorruptionEngine,
-      validationReport,
-    });
-    controller.finalizeInitialRender();
-  }
-
-  function bindEvents(controller, validationReport) {
     const render = () => {
       const renderStart = Date.now();
       window.ArchiveDriftRenderers.renderApplication({
@@ -47,6 +35,17 @@
       controller.recordRenderDuration(Date.now() - renderStart);
     };
 
+    saveManager.setAsyncSaveListener(() => {
+      render();
+    });
+
+    controller.init();
+    bindEvents(controller, render);
+    render();
+    controller.finalizeInitialRender();
+  }
+
+  function bindEvents(controller, render) {
     window.addEventListener("beforeunload", () => {
       controller.flushPendingState();
     });

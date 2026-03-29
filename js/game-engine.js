@@ -763,7 +763,7 @@
     function computeApprovalChecklist(caseData, progress, accessibleDocs, mustReadDocs, compareHints) {
       const unreadDocs = accessibleDocs.filter((doc) => !progress.readDocs.includes(doc.id));
       const memoPresent = Object.values(progress.annotationByDoc).some((value) => String(value || "").trim());
-      const compareDone = compareHints.some((hint) => hint.viewed);
+      const compareDone = progress.comparePairsViewed.length > 0;
       const mustReadPending = mustReadDocs.filter((doc) => doc.available && !doc.read);
       const items = [
         {
@@ -788,7 +788,12 @@
           id: "compare",
           label: "比較照合を行う",
           done: compareDone,
-          detail: compareDone ? "比較履歴あり" : "推奨比較を 1 件以上確認すると精度が上がる",
+          detail:
+            compareDone
+              ? "比較履歴あり"
+              : compareHints.length > 0
+                ? "推奨比較を 1 件以上確認すると精度が上がる"
+                : "比較可能な文書対があれば確認すると精度が上がる",
         },
         {
           id: "interpretation",

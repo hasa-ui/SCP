@@ -5,3 +5,4 @@ Original prompt: 動作を軽量化するためにどのような変更を加え
 - 2026-03-29: `save-manager` にデバウンス保存と `flushPendingSave()`、保存計測を追加。controller は重要操作のみ即時保存に変更。
 - 2026-03-29: `corruption-engine` に本文/差分キャッシュを追加し、`renderers` は `buildRenderModel()` を1回だけ使う構成へ寄せた。
 - 2026-03-29: linkedom 検証で既存フロー、デバウンス保存、キャッシュヒットを確認。Playwright client は `browser.newPage: Target page, context or browser has been closed` で失敗。
+- 2026-03-29: review 指摘に対応し、遅延保存タイマー完了後の再描画フックと、比較チェックリストの実ルール整合を追加。linkedom で `ASYNC_SAVE_WARNING_RENDER_OK` と `CHECKLIST_COMPARE_RULE_OK` を確認。

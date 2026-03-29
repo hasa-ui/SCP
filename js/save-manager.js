@@ -5,6 +5,7 @@
   function createSaveManager(options = {}) {
     const saveKey = options.saveKey || "scp-archive-drift-mvp-v2";
     const debounceMs = Number.isFinite(options.debounceMs) ? options.debounceMs : 260;
+    let asyncSaveListener = null;
     let storageWarningReason = "";
     let pendingTimer = null;
     let pendingState = null;
@@ -231,7 +232,14 @@
       }
 
       pendingTimer = setTimeout(() => {
-        flushPendingSave();
+        const result = flushPendingSave();
+        if (asyncSaveListener) {
+          asyncSaveListener({
+            ...result,
+            state,
+            saveOptions,
+          });
+        }
       }, debounceMs);
 
       return {
@@ -330,6 +338,10 @@
       };
     }
 
+    function setAsyncSaveListener(listener) {
+      asyncSaveListener = typeof listener === "function" ? listener : null;
+    }
+
     return {
       saveKey,
       currentVersion: dataTools.CURRENT_SAVE_VERSION,
@@ -341,6 +353,7 @@
       clearSavedState,
       getStorageWarningMessage,
       getMetrics,
+      setAsyncSaveListener,
     };
   }
 

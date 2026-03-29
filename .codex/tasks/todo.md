@@ -40,3 +40,15 @@
 - 2026-03-29: linkedom でメモ入力直後は保存されず、約350ms後に保存されることを確認 (`DEBOUNCED_SAVE_OK`)
 - 2026-03-29: 本文/差分キャッシュの hit が増えることを確認 (`CACHE_HIT_OK`)
 - 2026-03-29: Playwright client 実行は `browser.newPage: Target page, context or browser has been closed` で失敗
+
+## Follow-up log
+- 2026-03-29: review 指摘に対応し、遅延保存タイマー完了時の再描画フックを `save-manager` に追加。`app.js` からそのフックで warning banner を更新するよう修正。
+- 2026-03-29: `computeApprovalChecklist()` の比較済み判定を、推奨比較ヒントではなく実際の `comparePairsViewed` と揃えるよう修正。
+
+## Follow-up verification
+- 2026-03-29: `node --check app.js` 成功
+- 2026-03-29: `node --check js/save-manager.js` 成功
+- 2026-03-29: `node --check js/game-engine.js` 成功
+- 2026-03-29: `node /tmp/linkedom/verify-phase1-browser.mjs` 再実行成功 (`DEBUG_MODE_OK`, `SAVE_MIGRATION_OK`, `FULL_PLAYTHROUGH_OK`)
+- 2026-03-29: linkedom で遅延 autosave 失敗後に warning banner が再描画されることを確認 (`ASYNC_SAVE_WARNING_RENDER_OK`)
+- 2026-03-29: 非推奨ペア比較でもチェックリストと描画結果が `比較履歴あり` になることを確認 (`CHECKLIST_COMPARE_RULE_OK`)
